@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#10151f">
+  <meta name="description" content="MulRate - かけ算の計算力を鍛えるレート制トレーニングアプリ">
+  <title>MulRate</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <header class="topbar" aria-label="上部ステータス">
+      <button id="homeButton" class="ghost-button icon-button" type="button" aria-label="ホームへ戻る">⌂</button>
+      <div class="brand-block">
+        <div class="brand">MulRate</div>
+        <div id="statusText" class="status-text">レート：300</div>
+      </div>
+      <button id="pauseButton" class="ghost-button icon-button hidden" type="button" aria-label="一時停止">Ⅱ</button>
+    </header>
+
+    <main class="main-panel" aria-live="polite">
+      <section id="homeScreen" class="screen active" aria-labelledby="homeTitle">
+        <div class="hero-card">
+          <p class="eyebrow">かけ算トレーニング</p>
+          <h1 id="homeTitle">MulRate</h1>
+          <div class="metric-card">
+            <div class="metric-row">
+              <span>レート</span>
+              <strong id="homeRate">300</strong>
+            </div>
+            <div class="metric-row">
+              <span>ポイント</span>
+              <strong id="homePoint">5×2</strong>
+            </div>
+          </div>
+          <p id="homeDetail" class="detail-text">九九 5・2の段を中心に出題</p>
+          <div class="home-actions">
+            <button id="startButton" class="primary-button" type="button">スタート</button>
+            <button id="settingsButton" class="secondary-button" type="button">設定</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="gameScreen" class="screen" aria-labelledby="gameTitle">
+        <div class="game-card">
+          <div class="game-meta">
+            <span id="questionCounter">1 / 10</span>
+            <span id="gamePoint">ポイント：5×2</span>
+          </div>
+          <h2 id="gameTitle" class="sr-only">問題</h2>
+          <div id="messageArea" class="message-area"></div>
+          <div id="formula" class="formula formula-readable">5×2</div>
+          <div class="answer-line" aria-label="入力された答え">
+            <span id="answerDisplay" class="answer-display">&nbsp;</span>
+          </div>
+          <div id="subInfo" class="sub-info">答えを入力してください</div>
+          <div id="inlineActions" class="inline-actions"></div>
+        </div>
+      </section>
+
+      <section id="pauseScreen" class="screen" aria-labelledby="pauseTitle">
+        <div class="dialog-card">
+          <h2 id="pauseTitle">ポーズ</h2>
+          <p>タイマーを止めています。</p>
+          <div class="home-actions">
+            <button id="resumeButton" class="primary-button" type="button">問題へ戻る</button>
+            <button id="pauseHomeButton" class="secondary-button" type="button">初期画面へ</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="settingsScreen" class="screen" aria-labelledby="settingsTitle">
+        <div class="settings-card">
+          <h2 id="settingsTitle">設定</h2>
+
+          <fieldset>
+            <legend>テンキー配置</legend>
+            <label><input type="radio" name="keypadLayout" value="normal"> 普通のテンキー</label>
+            <label><input type="radio" name="keypadLayout" value="topLeft"> 1左上・0右下</label>
+            <label><input type="radio" name="keypadLayout" value="pseudo"> 疑似テンキー</label>
+          </fieldset>
+
+          <fieldset>
+            <legend>入力位置</legend>
+            <label><input type="radio" name="inputSide" value="right"> 右手用</label>
+            <label><input type="radio" name="inputSide" value="left"> 左手用</label>
+          </fieldset>
+
+          <fieldset>
+            <legend>手書きパッド</legend>
+            <label><input type="radio" name="handwritingPad" value="on"> 表示する</label>
+            <label><input type="radio" name="handwritingPad" value="off"> 表示しない</label>
+          </fieldset>
+
+          <fieldset>
+            <legend>数式のフォント</legend>
+            <label><input type="radio" name="formulaFont" value="readable"> 視認性の高いもの</label>
+            <label><input type="radio" name="formulaFont" value="formal"> フォーマルなもの</label>
+          </fieldset>
+
+          <fieldset>
+            <legend>効果音</legend>
+            <label><input type="radio" name="sound" value="on"> ON</label>
+            <label><input type="radio" name="sound" value="off"> OFF</label>
+          </fieldset>
+
+          <div class="settings-actions">
+            <button id="saveSettingsButton" class="primary-button" type="button">保存して戻る</button>
+            <button id="resetDataButton" class="danger-button" type="button">学習データをリセット</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <section id="inputZone" class="input-zone" aria-label="入力エリア">
+      <div id="padPanel" class="pad-panel">
+        <div class="pad-toolbar">
+          <span>手書きパッド</span>
+          <button id="clearPadButton" class="mini-button" type="button">消す</button>
+        </div>
+        <canvas id="scratchPad" width="900" height="280" aria-label="筆算やメモを書く手書きパッド"></canvas>
+      </div>
+
+      <div id="keypadPanel" class="keypad-panel">
+        <div id="keyHint" class="key-hint">Enter：決定　Backspace：消す</div>
+        <div id="keypad" class="keypad" role="group" aria-label="テンキー"></div>
+      </div>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
