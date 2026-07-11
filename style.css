@@ -379,7 +379,7 @@ input[type="radio"] { width: 19px; height: 19px; accent-color: var(--accent); }
   .key { border-radius: 14px; }
 }
 
-/* beta.3: keyboard-shaped keypad refinements */
+/* beta.4: keyboard-shaped keypad refinements */
 .keypad.topLeft,
 .keypad.pseudo {
   grid-template-columns: repeat(10, minmax(0, 1fr));

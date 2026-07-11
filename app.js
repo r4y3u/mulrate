@@ -243,7 +243,34 @@
     next.progress.patternStayCount = Math.max(0, Math.trunc(next.progress.patternStayCount || 0));
     next.player.rating = clamp(Math.round(next.player.rating || 300), 0, MAX_RATE);
     next.player.highestRating = clamp(Math.round(next.player.highestRating || next.player.rating), 0, MAX_RATE);
+    next.learnedTypes = repairLearnedTypes(next);
     return next;
+  }
+
+  function repairLearnedTypes(value) {
+    const learned = new Set(Array.isArray(value.learnedTypes) ? value.learnedTypes : []);
+
+    // 既存データの救済：すでに次の類型へ進んでいる場合、通過済みの類型は学習済みとして扱う。
+    const completedBeforeCurrent = clamp(Math.trunc(value.progress?.typeIndex || 0) - 1, -1, CURRICULUM.length - 1);
+    for (let i = 0; i <= completedBeforeCurrent; i++) {
+      learned.add(CURRICULUM[i].id);
+    }
+
+    // 履歴からも復元する。beta.4以前で解放条件が厳しすぎた場合の補正。
+    for (const item of Array.isArray(value.history) ? value.history : []) {
+      const type = findType(item.typeId);
+      if (!type) continue;
+      const firstCorrect = Number(item.firstCorrect || 0);
+      const finalCorrect = Number(item.finalCorrect || 0);
+      const avgFirstTime = Number(item.avgFirstTime || Infinity);
+      const pattern = item.pattern || '';
+      const outcome = item.outcome || '';
+      const basicCleared = pattern === 'A' && firstCorrect === SET_SIZE && avgFirstTime <= type.targetSeconds * 1.25;
+      const typeCleared = pattern === 'C' && ['advance', 'skip'].includes(outcome) && finalCorrect >= 9 && firstCorrect >= 8;
+      if (basicCleared || typeCleared) learned.add(type.id);
+    }
+
+    return Array.from(learned).filter((id) => CURRICULUM.some((type) => type.id === id));
   }
 
   function saveState() {
@@ -410,7 +437,7 @@
   function renderCurrentQuestion() {
     const problem = session.questions[session.currentIndex];
     if (!problem) {
-      renderReviewIntro();
+      completeSet();
       return;
     }
     session.phase = 'playing';
@@ -468,6 +495,20 @@
       session.currentIndex += 1;
       renderCurrentQuestion();
     }, correct ? 430 : 650);
+  }
+
+  function completeSet() {
+    session.retryQueue = session.questions.filter((q) => !q.initialCorrect);
+    session.retryIndex = 0;
+    session.input = '';
+    session.locked = false;
+
+    if (session.retryQueue.length === 0) {
+      finalizeResult();
+      return;
+    }
+
+    renderReviewIntro();
   }
 
   function renderReviewIntro() {
@@ -557,7 +598,12 @@
   }
 
   function finalizeResult() {
-    if (session.ratingApplied) return renderFinalResult();
+    if (!session.ratingApplied) applyResultWithoutRendering();
+    renderFinalResult();
+  }
+
+  function applyResultWithoutRendering() {
+    if (session.ratingApplied) return;
     const summary = summarizeSession(true);
     const outcome = session.practiceMode ? 'practice' : judgeProgress(summary);
     const before = state.player.rating;
@@ -602,7 +648,6 @@
     state.history = state.history.slice(-50);
     state.progress.completedSets += 1;
     saveState();
-    renderFinalResult();
   }
 
   function renderFinalResult() {
@@ -819,9 +864,31 @@
   function updateLearnedTypes(summary, outcome) {
     const typeId = session.result?.typeBefore || currentType().id;
     const pattern = session.result?.patternBefore || PATTERNS[state.progress.patternIndex]?.id || 'A';
-    if (pattern === 'A' && isExcellent(summary) && !state.learnedTypes.includes(typeId)) {
+    if (shouldUnlockLearnedType(summary, outcome, typeId, pattern) && !state.learnedTypes.includes(typeId)) {
       state.learnedTypes.push(typeId);
     }
+  }
+
+  function shouldUnlockLearnedType(summary, outcome, typeId, pattern) {
+    const type = findType(typeId);
+    if (!type) return false;
+    const typeQuestions = summary.questions.filter((q) => q.typeId === typeId);
+    const questions = typeQuestions.length ? typeQuestions : summary.questions;
+    const allInitialCorrect = questions.every((q) => q.initialCorrect);
+    const allFinalCorrect = questions.every((q) => q.finalCorrect);
+    const avgTypeTime = average(questions.map((q) => q.firstTime).filter((v) => Number.isFinite(v))) || summary.avgFirstTime;
+
+    // 基本確認で安定していれば、その時点で反復を解放する。
+    if (pattern === 'A') {
+      return allInitialCorrect && avgTypeTime <= type.targetSeconds * 1.20;
+    }
+
+    // 次の類型へ進めるだけの成績なら、直前の中心類型も反復対象にする。
+    if (pattern === 'C' && ['advance', 'skip'].includes(outcome)) {
+      return allFinalCorrect && summary.finalCorrect >= 9 && summary.firstCorrect >= 8;
+    }
+
+    return false;
   }
 
   function updateMastery(summary) {
@@ -852,7 +919,7 @@
   }
 
   function resultMessage(outcome) {
-    if (outcome === 'skip') return '飛び級できます';
+    if (outcome === 'skip') return '十分に定着しています';
     if (outcome === 'advance') return '安定して解けています';
     if (outcome === 'regress') return '復習を強めます';
     if (outcome === 'practice') return '学習済みを確認しました';
@@ -860,11 +927,11 @@
   }
 
   function resultSubInfo(outcome) {
-    if (outcome === 'skip') return '優秀な速度のため、確認パターンを一部飛ばします';
-    if (outcome === 'advance') return '次のパターンへ進みました';
-    if (outcome === 'regress') return '前のパターンへ戻りました';
+    if (outcome === 'skip') return '解き方が安定しているため、次の確認へ進みます';
+    if (outcome === 'advance') return '次の確認へ進みました';
+    if (outcome === 'regress') return '少し前の内容も混ぜて確認します';
     if (outcome === 'practice') return '学習済み反復のため、レート加算は割引されています';
-    return '同じパターンで確認を続けます';
+    return '同じ内容をもう一度確認します';
   }
 
   function resultHtml(rows, options = {}) {
@@ -916,6 +983,14 @@
       els.formula.innerHTML = content;
     } else {
       els.formula.textContent = content;
+    }
+  }
+
+  function setAnswerVisible(visible) {
+    els.answerLine.classList.toggle('hidden', !visible);
+    if (!visible) {
+      session.input = '';
+      els.answerDisplay.textContent = '\u00a0';
     }
   }
 
@@ -1074,7 +1149,7 @@
     }
 
     if (layout === 'pseudo') {
-      const map = { u: '4', i: '5', o: '6', j: '1', k: '2', l: '3', '+': 'backspace', ';': 'submit', ':': 'submit', ' ': 'submit' };
+      const map = { u: '4', i: '5', o: '6', j: '1', k: '2', l: '3', '+': 'submit', ';': 'submit', ':': 'submit', ' ': 'submit' };
       return map[key.toLowerCase()] || null;
     }
 
@@ -1165,6 +1240,10 @@
   }
 
   function goHome() {
+    if (session.questions.length >= SET_SIZE && !session.ratingApplied && ['reviewIntro', 'retry'].includes(session.phase)) {
+      // 終了済みセットを破棄しない。ホームへ戻る操作でも、まずレートだけは確定する。
+      applyResultWithoutRendering();
+    }
     session = createEmptySession();
     session.padCollapsed = true;
     applyPadVisibility();
@@ -1289,7 +1368,7 @@
     if (!state.learnedTypes.length) {
       const empty = document.createElement('p');
       empty.className = 'muted-text';
-      empty.textContent = 'まだ学習済みの類型はありません。パターンAを全問正解かつ十分な速度でクリアすると解放されます。';
+      empty.textContent = 'まだ学習済みの類型はありません。基本確認を全問正解かつ十分な速度で終えると解放されます。';
       els.learnedList.appendChild(empty);
       return;
     }
