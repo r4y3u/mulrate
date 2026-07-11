@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const STORAGE_KEY = 'mulrate_v1_0_0_state';
+  const STORAGE_KEY = 'mulrate_v1_0_0_beta2_state';
   const MAX_RATE = 99999999;
   const SET_SIZE = 10;
 
@@ -23,6 +23,8 @@
       keypadLayout: 'normal',
       inputSide: 'right',
       handwritingPad: true,
+      handwritingMode: 'layout',
+      operationOrder: 'padFirst',
       formulaFont: 'readable',
       sound: false
     },
@@ -33,12 +35,15 @@
       completedSets: 0
     },
     mastery: {},
+    learnedTypes: [],
     recentProblems: [],
     history: []
   };
 
   const els = {
     app: document.getElementById('app'),
+    navWindow: document.getElementById('navWindow'),
+    effectLayer: document.getElementById('effectLayer'),
     homeButton: document.getElementById('homeButton'),
     pauseButton: document.getElementById('pauseButton'),
     statusText: document.getElementById('statusText'),
@@ -46,15 +51,21 @@
     gameScreen: document.getElementById('gameScreen'),
     pauseScreen: document.getElementById('pauseScreen'),
     settingsScreen: document.getElementById('settingsScreen'),
+    learnedScreen: document.getElementById('learnedScreen'),
     homeRate: document.getElementById('homeRate'),
     homePoint: document.getElementById('homePoint'),
     homeDetail: document.getElementById('homeDetail'),
+    learnedSummary: document.getElementById('learnedSummary'),
     startButton: document.getElementById('startButton'),
+    learnedButton: document.getElementById('learnedButton'),
+    learnedList: document.getElementById('learnedList'),
+    learnedBackButton: document.getElementById('learnedBackButton'),
     settingsButton: document.getElementById('settingsButton'),
     questionCounter: document.getElementById('questionCounter'),
     gamePoint: document.getElementById('gamePoint'),
     messageArea: document.getElementById('messageArea'),
     formula: document.getElementById('formula'),
+    answerLine: document.getElementById('answerLine'),
     answerDisplay: document.getElementById('answerDisplay'),
     subInfo: document.getElementById('subInfo'),
     inlineActions: document.getElementById('inlineActions'),
@@ -63,8 +74,11 @@
     saveSettingsButton: document.getElementById('saveSettingsButton'),
     resetDataButton: document.getElementById('resetDataButton'),
     inputZone: document.getElementById('inputZone'),
+    operationStatus: document.getElementById('operationStatus'),
+    togglePadButton: document.getElementById('togglePadButton'),
     padPanel: document.getElementById('padPanel'),
     clearPadButton: document.getElementById('clearPadButton'),
+    closePadButton: document.getElementById('closePadButton'),
     scratchPad: document.getElementById('scratchPad'),
     keypadPanel: document.getElementById('keypadPanel'),
     keypad: document.getElementById('keypad'),
@@ -194,8 +208,12 @@
       questionStartedAt: 0,
       pauseStartedAt: 0,
       ratingApplied: false,
+      practiceMode: false,
+      practiceTypeId: null,
+      padCollapsed: true,
       lastDelta: 0,
-      lastOutcome: 'stay'
+      lastOutcome: 'stay',
+      result: null
     };
   }
 
@@ -217,6 +235,7 @@
     next.settings = { ...next.settings, ...(value.settings || {}) };
     next.progress = { ...next.progress, ...(value.progress || {}) };
     next.mastery = value.mastery || {};
+    next.learnedTypes = Array.isArray(value.learnedTypes) ? value.learnedTypes.filter((id) => CURRICULUM.some((t) => t.id === id)) : [];
     next.recentProblems = Array.isArray(value.recentProblems) ? value.recentProblems.slice(-80) : [];
     next.history = Array.isArray(value.history) ? value.history.slice(-50) : [];
     next.progress.typeIndex = clamp(Math.trunc(next.progress.typeIndex || 0), 0, CURRICULUM.length - 1);
@@ -307,12 +326,14 @@
 
   function createProblemByType(typeId, usedKeys = new Set()) {
     const type = findType(typeId) || CURRICULUM[0];
-    for (let i = 0; i < 120; i++) {
-      const problem = type.generate();
-      problem.typeId = type.id;
-      problem.typeLabel = type.label;
-      const key = problemKey(problem);
-      if (!state.recentProblems.includes(key) && !usedKeys.has(key)) {
+    for (const allowRecent of [false, true]) {
+      for (let i = 0; i < 160; i++) {
+        const problem = type.generate();
+        problem.typeId = type.id;
+        problem.typeLabel = type.label;
+        const key = problemKey(problem);
+        if (usedKeys.has(key)) continue;
+        if (!allowRecent && state.recentProblems.includes(key)) continue;
         usedKeys.add(key);
         return problem;
       }
@@ -325,6 +346,13 @@
   }
 
   function problemKey(problem) {
+    const a = Number(problem.left);
+    const b = Number(problem.right);
+    if (Number.isFinite(a) && Number.isFinite(b)) {
+      const low = Math.min(a, b);
+      const high = Math.max(a, b);
+      return `${low}x${high}`;
+    }
     return `${problem.left}x${problem.right}`;
   }
 
@@ -358,17 +386,22 @@
     return next;
   }
 
-  function startSet() {
+  function startSet(options = {}) {
     const used = new Set();
-    const typeIds = buildQuestionPlan();
+    const practiceTypeId = options.practiceTypeId || null;
+    const typeIds = practiceTypeId ? Array(SET_SIZE).fill(practiceTypeId) : buildQuestionPlan();
     session = createEmptySession();
     session.phase = 'playing';
+    session.practiceMode = Boolean(practiceTypeId);
+    session.practiceTypeId = practiceTypeId;
+    session.padCollapsed = state.settings.handwritingMode === 'overlay';
     session.questions = typeIds.map((typeId) => createProblemByType(typeId, used));
     session.currentIndex = 0;
     session.input = '';
     session.startedAt = performance.now();
     session.questionStartedAt = performance.now();
     session.locked = false;
+    applyPadVisibility();
     clearPad();
     showScreen('game');
     renderCurrentQuestion();
@@ -388,10 +421,12 @@
     els.gamePoint.textContent = `ポイント：${problem.point}`;
     setMessage('', '');
     setFormula(problem.point, 'problem');
+    setAnswerVisible(true);
     setAnswerDisplay('');
     els.subInfo.textContent = '答えを入力してください';
     els.inlineActions.innerHTML = '';
     clearPad();
+    updateOperationState();
   }
 
   function submitAnswer() {
@@ -419,15 +454,20 @@
     problem.initialCorrect = correct;
     problem.finalCorrect = correct;
 
+    problem.firstImpact = estimateQuestionImpact(problem, correct, elapsed, false);
+    problem.lostPotential = Math.max(0, estimateQuestionPotential(problem) - Math.max(0, problem.firstImpact));
+
     session.locked = true;
+    updateOperationState();
     beep(correct ? 'ok' : 'ng');
-    setMessage(correct ? '正解' : `不正解　正しくは ${problem.answer}`, correct ? 'success' : 'danger');
-    els.subInfo.textContent = correct ? `${formatSeconds(elapsed)}秒` : 'あとで答え直しできます';
+    triggerAnswerEffect(correct);
+    setMessage(correct ? `正　${formatSeconds(elapsed)}秒　+${formatRate(Math.max(0, problem.firstImpact))}` : `誤　${formatSeconds(elapsed)}秒　ロス ${formatRate(problem.lostPotential)}`, correct ? 'success' : 'danger');
+    els.subInfo.textContent = correct ? '次へ進みます' : 'あとで答え直しできます';
 
     window.setTimeout(() => {
       session.currentIndex += 1;
       renderCurrentQuestion();
-    }, correct ? 360 : 620);
+    }, correct ? 430 : 650);
   }
 
   function renderReviewIntro() {
@@ -436,17 +476,21 @@
     session.retryIndex = 0;
     session.input = '';
     session.locked = false;
+    updateOperationState();
     const summary = summarizeSession(false);
+    const provisional = previewRateResult(summary);
     els.questionCounter.textContent = '結果';
-    els.gamePoint.textContent = `ポイント：${currentType().point}`;
+    els.gamePoint.textContent = session.practiceMode ? '学習済み反復' : `ポイント：${currentType().point}`;
     setMessage('1セット終了', '');
+    setAnswerVisible(false);
     setFormula(resultHtml([
       ['初回正解', `${summary.firstCorrect} / ${SET_SIZE}`],
       ['平均時間', `${formatSeconds(summary.avgFirstTime)}秒`],
-      ['答え直し', session.retryQueue.length ? `${session.retryQueue.length}問` : 'なし']
-    ]), 'result');
+      ['変動見込み', `${provisional.delta >= 0 ? '+' : ''}${formatRate(provisional.delta)}`],
+      ['ロス', formatRate(provisional.loss)]
+    ], { loss: true }), 'result');
     setAnswerDisplay('');
-    els.subInfo.textContent = session.retryQueue.length ? '答え直しでレート減少を抑えられます' : 'レートを確定できます';
+    els.subInfo.textContent = session.retryQueue.length ? '答え直しでロスを減らせます' : 'レートを確定できます';
     els.inlineActions.innerHTML = '';
 
     if (session.retryQueue.length) {
@@ -476,10 +520,12 @@
         <div class="review-detail">あなたの答え：${escapeHtml(String(problem.firstAnswer))}</div>
       </div>
     `, 'result');
+    setAnswerVisible(true);
     setAnswerDisplay('');
     els.subInfo.textContent = '答えを入力してください';
     els.inlineActions.innerHTML = '';
     clearPad();
+    updateOperationState();
   }
 
   function submitRetryAnswer() {
@@ -492,45 +538,63 @@
     problem.retryTime = elapsed;
     problem.retryCorrect = correct;
     problem.finalCorrect = correct;
+    problem.retryImpact = estimateQuestionImpact(problem, correct, elapsed, true);
+    if (correct) problem.lostPotential = Math.max(0, problem.lostPotential - Math.max(0, problem.retryImpact));
     session.locked = true;
+    updateOperationState();
     beep(correct ? 'ok' : 'ng');
-    setMessage(correct ? '答え直し成功' : `まだ違います　正しくは ${problem.answer}`, correct ? 'success' : 'danger');
-    els.subInfo.textContent = correct ? '減点を一部回復しました' : 'この問題は最終不正解です';
+    triggerAnswerEffect(correct);
+    setMessage(correct ? `答え直し成功　+${formatRate(Math.max(0, problem.retryImpact))}` : `まだ違います　ロス ${formatRate(problem.lostPotential)}`, correct ? 'success' : 'danger');
+    els.subInfo.textContent = correct ? '減点を一部回復しました' : `正しくは ${problem.answer}`;
 
     window.setTimeout(() => {
       session.retryIndex += 1;
       renderRetryQuestion();
-    }, correct ? 520 : 780);
+    }, correct ? 560 : 840);
   }
 
   function finalizeResult() {
     if (session.ratingApplied) return renderFinalResult();
     const summary = summarizeSession(true);
-    const outcome = judgeProgress(summary);
-    const delta = calculateRateDelta(summary, outcome);
+    const outcome = session.practiceMode ? 'practice' : judgeProgress(summary);
     const before = state.player.rating;
-    const after = clamp(before + delta, 0, MAX_RATE);
+    const rateResult = calculateRateResult(summary, outcome, { practiceMode: session.practiceMode });
+    const after = clamp(before + rateResult.delta, 0, MAX_RATE);
     state.player.rating = after;
     state.player.highestRating = Math.max(state.player.highestRating, after);
     session.lastDelta = after - before;
     session.lastOutcome = outcome;
+    session.result = {
+      ratingBefore: before,
+      ratingAfter: after,
+      delta: after - before,
+      loss: rateResult.loss,
+      idealDelta: rateResult.idealDelta,
+      patternBefore: PATTERNS[state.progress.patternIndex]?.id || 'A',
+      typeBefore: currentType().id
+    };
     session.ratingApplied = true;
 
     updateMastery(summary);
-    updateProgress(outcome);
+    if (!session.practiceMode) {
+      updateLearnedTypes(summary, outcome);
+      updateProgress(outcome);
+    }
     rememberRecentProblems(session.questions);
     state.history.push({
       date: new Date().toISOString(),
       before,
       after,
       delta: after - before,
+      loss: rateResult.loss,
       firstCorrect: summary.firstCorrect,
       finalCorrect: summary.finalCorrect,
       avgFirstTime: summary.avgFirstTime,
       avgFinalTime: summary.avgFinalTime,
-      typeId: currentType().id,
-      pattern: PATTERNS[state.progress.patternIndex]?.id || 'A',
-      outcome
+      typeId: session.result.typeBefore,
+      pattern: session.result.patternBefore,
+      outcome,
+      practiceMode: session.practiceMode
     });
     state.history = state.history.slice(-50);
     state.progress.completedSets += 1;
@@ -540,24 +604,21 @@
 
   function renderFinalResult() {
     const summary = summarizeSession(true);
-    const delta = session.lastDelta;
+    const result = session.result || { ratingBefore: state.player.rating, ratingAfter: state.player.rating, delta: 0, loss: 0 };
+    const delta = result.delta;
     const sign = delta > 0 ? '+' : '';
     els.questionCounter.textContent = 'リザルト';
-    els.gamePoint.textContent = `次：${currentType().point}`;
+    els.gamePoint.textContent = session.practiceMode ? '学習済み反復' : `次：${currentType().point}`;
     setMessage(resultMessage(session.lastOutcome), delta >= 0 ? 'success' : 'danger');
-    setFormula(resultHtml([
-      ['初回正解', `${summary.firstCorrect} / ${SET_SIZE}`],
-      ['最終正解', `${summary.finalCorrect} / ${SET_SIZE}`],
-      ['平均時間', `${formatSeconds(summary.avgFirstTime)}秒`],
-      ['レート', `${formatRate(summary.ratingBefore)} → ${formatRate(state.player.rating)}`],
-      ['変動', `${sign}${formatRate(Math.abs(delta))}`]
-    ]), 'result');
+    setAnswerVisible(false);
+    setFormula(finalResultHtml(summary, result), 'result');
     setAnswerDisplay('');
-    els.subInfo.textContent = session.lastOutcome === 'advance' ? '次のパターンへ進みました' : session.lastOutcome === 'regress' ? '前のパターンへ戻りました' : '同じパターンで確認を続けます';
+    els.subInfo.textContent = resultSubInfo(session.lastOutcome);
     els.inlineActions.innerHTML = '';
-    addInlineButton('もう一度', 'primary', () => startSet());
+    addInlineButton('もう一度', 'primary', () => startSet(session.practiceMode ? { practiceTypeId: session.practiceTypeId } : {}));
     addInlineButton('初期画面へ', 'secondary', () => goHome());
     updateTopInfo();
+    animateResultNumbers(result);
   }
 
   function summarizeSession(includeRetry) {
@@ -578,14 +639,33 @@
   }
 
   function judgeProgress(summary) {
-    const excellent = summary.firstCorrect === SET_SIZE && summary.avgFirstTime <= summary.targetTime * 1.15;
+    const excellent = isExcellent(summary);
+    const strong = summary.firstCorrect === SET_SIZE && summary.avgFirstTime <= summary.targetTime * 1.15;
+    const good = summary.finalCorrect >= 9 && summary.firstCorrect >= 8 && summary.avgFirstTime <= summary.targetTime * 1.45;
     const poor = summary.finalCorrect <= 5 || summary.firstCorrect <= 4 || summary.avgFirstTime > summary.targetTime * 2.0;
-    if (excellent) return 'advance';
+    if (excellent) return 'skip';
+    if (strong || good) return 'advance';
     if (poor) return 'regress';
     return 'stay';
   }
 
-  function calculateRateDelta(summary, outcome) {
+  function isExcellent(summary) {
+    return summary.firstCorrect === SET_SIZE && summary.avgFirstTime <= summary.targetTime;
+  }
+
+  function previewRateResult(summary) {
+    const outcome = session.practiceMode ? 'practice' : judgeProgress(summary);
+    return calculateRateResult(summary, outcome, { practiceMode: session.practiceMode });
+  }
+
+  function calculateRateResult(summary, outcome, options = {}) {
+    const delta = calculateRateDelta(summary, outcome, options);
+    const idealDelta = Math.max(delta, calculateIdealRateDelta(summary, outcome, options));
+    const loss = Math.max(0, idealDelta - delta);
+    return { delta, idealDelta, loss };
+  }
+
+  function calculateRateDelta(summary, outcome, options = {}) {
     const possible = summary.questions.reduce((sum, q) => {
       const type = findType(q.typeId);
       return sum + 1.25 * (type?.difficulty || 1);
@@ -599,6 +679,34 @@
       return sum + resultFactor * speedFactor * (type?.difficulty || 1);
     }, 0);
 
+    let delta = deltaFromPerformance(summary, achieved, possible, outcome);
+
+    if (outcome === 'skip') delta *= 1.28;
+    if (options.practiceMode && delta > 0) delta *= 0.3;
+
+    if (outcome === 'stay' && delta > 0) {
+      delta *= Math.pow(0.5, state.progress.patternStayCount + 1);
+    }
+
+    const avgDifficulty = average(summary.questions.map((q) => findType(q.typeId)?.difficulty || 1));
+    const cap = Math.max(80, 1200 * Math.pow(avgDifficulty, 1.1));
+    delta = clamp(delta, -cap * 0.45, cap * (outcome === 'skip' ? 1.35 : 1));
+    return Math.round(delta);
+  }
+
+  function calculateIdealRateDelta(summary, outcome, options = {}) {
+    const possible = summary.questions.reduce((sum, q) => {
+      const type = findType(q.typeId);
+      return sum + 1.25 * (type?.difficulty || 1);
+    }, 0);
+    let delta = deltaFromPerformance(summary, possible, possible, 'skip');
+    if (options.practiceMode && delta > 0) delta *= 0.3;
+    const avgDifficulty = average(summary.questions.map((q) => findType(q.typeId)?.difficulty || 1));
+    const cap = Math.max(80, 1200 * Math.pow(avgDifficulty, 1.1));
+    return Math.round(clamp(delta, -cap * 0.45, cap * 1.35));
+  }
+
+  function deltaFromPerformance(summary, achieved, possible, outcome) {
     const performanceRatio = possible ? achieved / possible : 0;
     const avgDifficulty = average(summary.questions.map((q) => findType(q.typeId)?.difficulty || 1));
     const expectedRatio = clamp(0.27 + Math.log10(summary.ratingBefore + 100) / 22, 0.30, 0.78);
@@ -609,16 +717,20 @@
     if (summary.firstCorrect === SET_SIZE && summary.avgFirstTime <= summary.targetTime * 1.15) delta += 0.12 * inflation;
     if (summary.finalCorrect === SET_SIZE && summary.firstCorrect < SET_SIZE) delta += 0.04 * inflation;
     if (summary.finalCorrect <= 6) delta -= 0.08 * inflation;
+    if (outcome === 'skip') delta += 0.1 * inflation;
+    return delta * suppression;
+  }
 
-    delta *= suppression;
+  function estimateQuestionPotential(problem) {
+    const type = findType(problem.typeId);
+    return Math.round(42 * Math.pow(type?.difficulty || 1, 1.32) * 1.25);
+  }
 
-    if (outcome === 'stay' && delta > 0) {
-      delta *= Math.pow(0.5, state.progress.patternStayCount + 1);
-    }
-
-    const cap = Math.max(80, 1200 * Math.pow(avgDifficulty, 1.1));
-    delta = clamp(delta, -cap * 0.45, cap);
-    return Math.round(delta);
+  function estimateQuestionImpact(problem, correct, seconds, retry) {
+    const type = findType(problem.typeId);
+    const resultFactor = correct ? (retry ? 0.45 : 1) : 0;
+    const speedFactor = getSpeedFactor(seconds, type?.targetSeconds || 5);
+    return Math.round(42 * resultFactor * speedFactor * Math.pow(type?.difficulty || 1, 1.32));
   }
 
   function getSpeedFactor(seconds, targetSeconds) {
@@ -630,6 +742,12 @@
   }
 
   function updateProgress(outcome) {
+    if (outcome === 'skip') {
+      skipPattern();
+      state.progress.patternStayCount = 0;
+      return;
+    }
+
     if (outcome === 'advance') {
       advancePattern();
       state.progress.patternStayCount = 0;
@@ -649,7 +767,7 @@
     const p = state.progress.patternIndex;
     if (p === 2) {
       state.progress.typeIndex = Math.min(CURRICULUM.length - 1, state.progress.typeIndex + 1);
-      state.progress.patternIndex = state.progress.typeIndex === CURRICULUM.length - 1 ? 3 : 3;
+      state.progress.patternIndex = 3;
       return;
     }
     if (p === 5) {
@@ -659,8 +777,48 @@
     state.progress.patternIndex = Math.min(PATTERNS.length - 1, p + 1);
   }
 
+  function skipPattern() {
+    const p = state.progress.patternIndex;
+    if (p === 0) {
+      state.progress.patternIndex = 2;
+      return;
+    }
+    if (p === 1) {
+      state.progress.patternIndex = 2;
+      return;
+    }
+    if (p === 2) {
+      state.progress.typeIndex = Math.min(CURRICULUM.length - 1, state.progress.typeIndex + 1);
+      state.progress.patternIndex = 3;
+      return;
+    }
+    if (p === 3) {
+      state.progress.patternIndex = 5;
+      return;
+    }
+    if (p === 4 || p === 5) {
+      state.progress.patternIndex = 0;
+      return;
+    }
+    advancePattern();
+  }
+
   function regressPattern() {
-    state.progress.patternIndex = Math.max(0, state.progress.patternIndex - 1);
+    const p = state.progress.patternIndex;
+    if (p === 3 && state.progress.typeIndex > 0) {
+      state.progress.typeIndex -= 1;
+      state.progress.patternIndex = 2;
+      return;
+    }
+    state.progress.patternIndex = Math.max(0, p - 1);
+  }
+
+  function updateLearnedTypes(summary, outcome) {
+    const typeId = session.result?.typeBefore || currentType().id;
+    const pattern = session.result?.patternBefore || PATTERNS[state.progress.patternIndex]?.id || 'A';
+    if (pattern === 'A' && isExcellent(summary) && !state.learnedTypes.includes(typeId)) {
+      state.learnedTypes.push(typeId);
+    }
   }
 
   function updateMastery(summary) {
@@ -691,15 +849,57 @@
   }
 
   function resultMessage(outcome) {
+    if (outcome === 'skip') return '飛び級できます';
     if (outcome === 'advance') return '安定して解けています';
     if (outcome === 'regress') return '復習を強めます';
+    if (outcome === 'practice') return '学習済みを確認しました';
     return 'もう少し確認します';
   }
 
-  function resultHtml(rows) {
-    return `<div class="result-table">${rows.map(([label, value]) => `
-      <div class="result-row"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>
-    `).join('')}</div>`;
+  function resultSubInfo(outcome) {
+    if (outcome === 'skip') return '優秀な速度のため、確認パターンを一部飛ばします';
+    if (outcome === 'advance') return '次のパターンへ進みました';
+    if (outcome === 'regress') return '前のパターンへ戻りました';
+    if (outcome === 'practice') return '学習済み反復のため、レート加算は割引されています';
+    return '同じパターンで確認を続けます';
+  }
+
+  function resultHtml(rows, options = {}) {
+    return `<div class="result-table">${rows.map(([label, value]) => {
+      const lossClass = label === 'ロス' ? ' loss-row' : '';
+      return `<div class="result-row${lossClass}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
+    }).join('')}</div>`;
+  }
+
+  function finalResultHtml(summary, result) {
+    const delta = result.delta || 0;
+    const sign = delta > 0 ? '+' : '';
+    return `<div class="result-table">
+      <div class="result-row"><span>初回正解</span><strong>${summary.firstCorrect} / ${SET_SIZE}</strong></div>
+      <div class="result-row"><span>最終正解</span><strong>${summary.finalCorrect} / ${SET_SIZE}</strong></div>
+      <div class="result-row"><span>平均時間</span><strong>${formatSeconds(summary.avgFirstTime)}秒</strong></div>
+      <div class="result-row emphasis"><span>変動</span><strong id="deltaCounter" data-final="${delta}">${sign}${formatRate(delta)}</strong></div>
+      <div class="result-row emphasis fade-in"><span>レート</span><strong>${formatRate(result.ratingBefore)} → ${formatRate(result.ratingAfter)}</strong></div>
+      <div class="result-row loss-row"><span>ロス</span><strong>${formatRate(result.loss || 0)}</strong></div>
+    </div>`;
+  }
+
+  function animateResultNumbers(result) {
+    const el = document.getElementById('deltaCounter');
+    if (!el) return;
+    const final = result.delta || 0;
+    const sign = final > 0 ? '+' : final < 0 ? '-' : '';
+    const absFinal = Math.abs(final);
+    const started = performance.now();
+    const duration = 620;
+    const tick = (now) => {
+      const t = clamp((now - started) / duration, 0, 1);
+      const eased = 1 - Math.pow(1 - t, 3);
+      const value = Math.round(absFinal * eased);
+      el.textContent = `${sign}${formatRate(value)}`;
+      if (t < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
   }
 
   function setMessage(text, type) {
@@ -782,8 +982,14 @@
       button.type = 'button';
       button.className = `key ${key.kind || ''} ${key.className || ''}`.trim();
       button.textContent = key.label;
+      button.dataset.action = key.action;
+      if (/^\d$/.test(key.action)) button.dataset.digit = key.action;
       button.setAttribute('aria-label', key.aria || key.label);
-      button.addEventListener('click', () => handleInput(key.action));
+      button.addEventListener('pointerdown', (event) => {
+        event.preventDefault();
+        flashKey(key.action);
+        handleInput(key.action);
+      });
       els.keypad.appendChild(button);
     }
 
@@ -800,16 +1006,16 @@
     if (layout === 'topLeft') {
       return [
         digitKey('1'), digitKey('2'), digitKey('3'), controlKey('消', 'backspace'),
-        digitKey('4'), digitKey('5'), digitKey('6'), controlKey('C', 'clear'),
-        digitKey('7'), digitKey('8'), digitKey('9'), digitKey('0'),
-        okKey('OK', 'wide-4')
+        digitKey('4', 'row2-first'), digitKey('5'), digitKey('6'), controlKey('C', 'clear'),
+        digitKey('7', 'row3-first'), digitKey('8'), digitKey('9'), digitKey('0'),
+        okKey('Space', 'space-key')
       ];
     }
     if (layout === 'pseudo') {
       return [
         digitKey('7'), digitKey('8'), digitKey('9'), digitKey('0'),
-        digitKey('4'), digitKey('5'), digitKey('6'), controlKey('C', 'clear'),
-        digitKey('1'), digitKey('2'), digitKey('3'), okKey('OK')
+        digitKey('4', 'row2-first'), digitKey('5'), digitKey('6'), controlKey('C', 'clear'),
+        digitKey('1', 'row3-first'), digitKey('2'), digitKey('3'), okKey(';')
       ];
     }
     return [
@@ -820,8 +1026,8 @@
     ];
   }
 
-  function digitKey(n) {
-    return { label: n, action: n, aria: `${n}を入力` };
+  function digitKey(n, className = '') {
+    return { label: n, action: n, aria: `${n}を入力`, className };
   }
 
   function controlKey(label, action) {
@@ -839,6 +1045,7 @@
     const mapped = mapPhysicalKey(key, layout);
     if (!mapped) return;
     event.preventDefault();
+    flashKey(mapped);
     handleInput(mapped);
   }
 
@@ -862,22 +1069,22 @@
   }
 
   function showScreen(name) {
-    for (const screen of [els.homeScreen, els.gameScreen, els.pauseScreen, els.settingsScreen]) {
+    for (const screen of [els.homeScreen, els.gameScreen, els.pauseScreen, els.settingsScreen, els.learnedScreen]) {
       screen.classList.remove('active');
     }
     const active = {
       home: els.homeScreen,
       game: els.gameScreen,
       pause: els.pauseScreen,
-      settings: els.settingsScreen
+      settings: els.settingsScreen,
+      learned: els.learnedScreen
     }[name];
     active?.classList.add('active');
 
-    const showInput = name === 'game';
-    els.inputZone.style.display = showInput ? 'grid' : 'none';
     els.pauseButton.classList.toggle('hidden', !(name === 'game' && session.phase === 'playing'));
     els.homeButton.classList.toggle('hidden', name === 'home');
     updateTopInfo();
+    updateOperationState();
   }
 
   function updateTopInfo() {
@@ -885,14 +1092,16 @@
     els.statusText.textContent = `レート：${rate}`;
     els.homeRate.textContent = rate;
     els.homePoint.textContent = currentType().point;
-    els.homeDetail.textContent = `${currentType().label}を中心に出題`;
-    els.formula.className = `formula formula-${state.settings.formulaFont}`;
+    els.homeDetail.textContent = currentType().label;
+    els.learnedSummary.textContent = learnedSummaryText();
   }
 
   function openSettings() {
     setRadioValue('keypadLayout', state.settings.keypadLayout);
     setRadioValue('inputSide', state.settings.inputSide);
     setRadioValue('handwritingPad', state.settings.handwritingPad ? 'on' : 'off');
+    setRadioValue('handwritingMode', state.settings.handwritingMode || 'layout');
+    setRadioValue('operationOrder', state.settings.operationOrder || 'padFirst');
     setRadioValue('formulaFont', state.settings.formulaFont);
     setRadioValue('sound', state.settings.sound ? 'on' : 'off');
     showScreen('settings');
@@ -902,6 +1111,8 @@
     state.settings.keypadLayout = getRadioValue('keypadLayout') || 'normal';
     state.settings.inputSide = getRadioValue('inputSide') || 'right';
     state.settings.handwritingPad = getRadioValue('handwritingPad') !== 'off';
+    state.settings.handwritingMode = getRadioValue('handwritingMode') || 'layout';
+    state.settings.operationOrder = getRadioValue('operationOrder') || 'padFirst';
     state.settings.formulaFont = getRadioValue('formulaFont') || 'readable';
     state.settings.sound = getRadioValue('sound') === 'on';
     saveState();
@@ -919,8 +1130,12 @@
   }
 
   function applySettings() {
-    els.padPanel.classList.toggle('off', !state.settings.handwritingPad);
     els.inputZone.classList.toggle('left', state.settings.inputSide === 'left');
+    els.inputZone.classList.toggle('overlay-mode', state.settings.handwritingMode === 'overlay');
+    els.inputZone.classList.toggle('pad-first', state.settings.operationOrder !== 'keypadFirst');
+    els.inputZone.classList.toggle('keypad-first', state.settings.operationOrder === 'keypadFirst');
+    if (!state.settings.handwritingPad) session.padCollapsed = true;
+    applyPadVisibility();
     renderKeypad();
     updateTopInfo();
   }
@@ -938,6 +1153,8 @@
 
   function goHome() {
     session = createEmptySession();
+    session.padCollapsed = true;
+    applyPadVisibility();
     clearPad();
     showScreen('home');
   }
@@ -965,13 +1182,15 @@
   }
 
   function formatRate(value) {
-    const digits = String(Math.max(0, Math.round(value)));
+    const rounded = Math.round(Number(value) || 0);
+    const negative = rounded < 0;
+    const digits = String(Math.abs(rounded));
     const parts = [];
     for (let end = digits.length; end > 0; end -= 4) {
       const start = Math.max(0, end - 4);
       parts.unshift(digits.slice(start, end));
     }
-    return parts.join('\u2009');
+    return `${negative ? '-' : ''}${parts.join('\u2009')}`;
   }
 
   function beep(type) {
@@ -991,6 +1210,89 @@
       oscillator.stop(audioContext.currentTime + 0.1);
     } catch (error) {
       console.warn('Sound failed:', error);
+    }
+  }
+
+
+  function flashKey(action) {
+    const safeAction = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(action) : String(action).replace(/"/g, '\"');
+    const selector = `[data-action="${safeAction}"]`;
+    const button = els.keypad.querySelector(selector);
+    if (!button) return;
+    button.classList.remove('pressed');
+    void button.offsetWidth;
+    button.classList.add('pressed');
+    window.setTimeout(() => button.classList.remove('pressed'), 110);
+  }
+
+  function triggerAnswerEffect(correct) {
+    if (correct) {
+      els.effectLayer.classList.remove('splash');
+      void els.effectLayer.offsetWidth;
+      els.effectLayer.classList.add('splash');
+      window.setTimeout(() => els.effectLayer.classList.remove('splash'), 320);
+      return;
+    }
+    els.navWindow.classList.remove('shake');
+    void els.navWindow.offsetWidth;
+    els.navWindow.classList.add('shake');
+    window.setTimeout(() => els.navWindow.classList.remove('shake'), 240);
+  }
+
+  function applyPadVisibility() {
+    const canShow = Boolean(state.settings.handwritingPad);
+    els.padPanel.classList.toggle('off', !canShow);
+    els.togglePadButton.classList.toggle('off', !canShow);
+    els.padPanel.classList.toggle('collapsed', !canShow || session.padCollapsed);
+    els.togglePadButton.textContent = session.padCollapsed ? 'メモを開く' : 'メモを閉じる';
+  }
+
+  function togglePad(force) {
+    if (!state.settings.handwritingPad) return;
+    session.padCollapsed = typeof force === 'boolean' ? !force : !session.padCollapsed;
+    applyPadVisibility();
+  }
+
+  function updateOperationState() {
+    const active = ['playing', 'retry'].includes(session.phase) && !session.locked;
+    els.inputZone.classList.toggle('answering', active);
+    els.operationStatus.textContent = active ? '入力できます' : 'テンキーウィンドウ';
+  }
+
+  function learnedSummaryText() {
+    if (!state.learnedTypes.length) return 'なし';
+    const labels = state.learnedTypes.slice(-2).map((id) => findType(id)?.label || id);
+    const more = state.learnedTypes.length > 2 ? ` ほか${state.learnedTypes.length - 2}` : '';
+    return `${labels.join(' / ')}${more}`;
+  }
+
+  function openLearned() {
+    renderLearnedList();
+    showScreen('learned');
+  }
+
+  function renderLearnedList() {
+    els.learnedList.innerHTML = '';
+    if (!state.learnedTypes.length) {
+      const empty = document.createElement('p');
+      empty.className = 'muted-text';
+      empty.textContent = 'まだ学習済みの類型はありません。パターンAを全問正解かつ十分な速度でクリアすると解放されます。';
+      els.learnedList.appendChild(empty);
+      return;
+    }
+    for (const typeId of state.learnedTypes) {
+      const type = findType(typeId);
+      if (!type) continue;
+      const item = document.createElement('div');
+      item.className = 'learned-item';
+      item.innerHTML = `<div><strong>${escapeHtml(type.label)}</strong><span>ポイント：${escapeHtml(type.point)}</span></div>`;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'primary-button';
+      button.textContent = '反復';
+      button.addEventListener('click', () => startSet({ practiceTypeId: type.id }));
+      item.appendChild(button);
+      els.learnedList.appendChild(item);
     }
   }
 
@@ -1046,7 +1348,9 @@
   }
 
   function attachEvents() {
-    els.startButton.addEventListener('click', startSet);
+    els.startButton.addEventListener('click', () => startSet());
+    els.learnedButton.addEventListener('click', openLearned);
+    els.learnedBackButton.addEventListener('click', goHome);
     els.settingsButton.addEventListener('click', openSettings);
     els.homeButton.addEventListener('click', goHome);
     els.pauseButton.addEventListener('click', pauseGame);
@@ -1055,6 +1359,8 @@
     els.saveSettingsButton.addEventListener('click', saveSettingsFromForm);
     els.resetDataButton.addEventListener('click', resetData);
     els.clearPadButton.addEventListener('click', clearPad);
+    els.togglePadButton.addEventListener('click', () => togglePad());
+    els.closePadButton.addEventListener('click', () => togglePad(false));
     window.addEventListener('keydown', handleKeyboard);
   }
 

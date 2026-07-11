@@ -1,14 +1,9 @@
 #!/usr/bin/env node
 'use strict';
 
-// MulRate v1.0.0 balance simulator.
-// This is not used by the browser app. It is a developer aid for checking
-// whether the rating curve feels plausible before manual playtesting.
-
-const MAX_RATE = 99999999;
 const SET_SIZE = 10;
-
-const patterns = [
+const MAX_RATE = 99999999;
+const PATTERNS = [
   { id: 'A', center: 10, recent: 0, base: 0, challenge: 0 },
   { id: 'B', center: 9, recent: 0, base: 0, challenge: 1 },
   { id: 'C', center: 8, recent: 0, base: 0, challenge: 2 },
@@ -17,7 +12,7 @@ const patterns = [
   { id: 'F', center: 9, recent: 1, base: 0, challenge: 0 }
 ];
 
-const curriculum = [
+const CURRICULUM = [
   { id: 'KUKU_5_2', label: '九九 5・2の段', difficulty: 1.0, targetSeconds: 2.8 },
   { id: 'KUKU_3_4', label: '九九 3・4の段', difficulty: 1.12, targetSeconds: 3.0 },
   { id: 'KUKU_6', label: '九九 6の段', difficulty: 1.24, targetSeconds: 3.1 },
@@ -40,147 +35,140 @@ const curriculum = [
   { id: 'M2D2_MIX', label: '2けた×2けた 混合', difficulty: 5.05, targetSeconds: 15.0 }
 ];
 
-const profiles = {
-  beginner: { label: '初学者', accuracy: 0.72, speed: 1.28, growth: 0.010 },
-  steady: { label: '標準', accuracy: 0.84, speed: 1.05, growth: 0.014 },
-  quick: { label: '速く正確', accuracy: 0.94, speed: 0.78, growth: 0.010 }
-};
+const LEARNERS = [
+  { name: '初学者', accuracy: 0.70, speed: 1.55, learning: 0.018, carelessness: 0.03 },
+  { name: '標準', accuracy: 0.82, speed: 1.18, learning: 0.026, carelessness: 0.025 },
+  { name: '得意', accuracy: 0.92, speed: 0.88, learning: 0.033, carelessness: 0.018 },
+  { name: 'ケアレス型', accuracy: 0.86, speed: 0.78, learning: 0.024, carelessness: 0.085 },
+  { name: '慎重型', accuracy: 0.91, speed: 1.42, learning: 0.022, carelessness: 0.012 }
+];
 
-function simulate(profile, sets = 120) {
-  let rating = 300;
-  let typeIndex = 0;
-  let patternIndex = 0;
-  let patternStayCount = 0;
-  const snapshots = [];
-  let skill = 0;
-
-  for (let set = 1; set <= sets; set++) {
-    const qs = plan(typeIndex, patternIndex).map((idx) => curriculum[idx]);
-    const answers = qs.map((type) => {
-      const diffGap = Math.max(0, type.difficulty - (1 + skill * 4.4));
-      const pCorrect = clamp(profile.accuracy + skill * 0.16 - diffGap * 0.08, 0.05, 0.995);
-      const initialCorrect = Math.random() < pCorrect;
-      const retryCorrect = !initialCorrect && Math.random() < clamp(pCorrect * 0.62, 0.05, 0.88);
-      const seconds = type.targetSeconds * clamp(randomNormal(profile.speed - skill * 0.18, 0.12), 0.45, 2.4);
-      return { type, initialCorrect, retryCorrect, finalCorrect: initialCorrect || retryCorrect, firstTime: seconds };
-    });
-
-    const summary = summarize(answers, rating);
-    const outcome = judge(summary);
-    const delta = calculateRateDelta(summary, outcome, patternStayCount);
-    rating = clamp(Math.round(rating + delta), 0, MAX_RATE);
-
-    if (outcome === 'advance') {
-      if (patternIndex === 2) {
-        typeIndex = Math.min(curriculum.length - 1, typeIndex + 1);
-        patternIndex = 3;
-      } else if (patternIndex === 5) {
-        patternIndex = 0;
-      } else {
-        patternIndex = Math.min(patterns.length - 1, patternIndex + 1);
-      }
-      patternStayCount = 0;
-    } else if (outcome === 'regress') {
-      patternIndex = Math.max(0, patternIndex - 1);
-      patternStayCount = 0;
-    } else {
-      patternStayCount += 1;
-    }
-
-    skill = clamp(skill + profile.growth + (outcome === 'advance' ? 0.006 : outcome === 'regress' ? -0.004 : 0.001), 0, 1);
-
-    if ([10, 20, 40, 80, 120].includes(set)) {
-      snapshots.push({ set, rating, point: curriculum[typeIndex].label, pattern: patterns[patternIndex].id, skill: skill.toFixed(2) });
-    }
-  }
-
-  return snapshots;
-}
-
-function plan(typeIndex, patternIndex) {
-  const pattern = patterns[patternIndex];
-  const current = typeIndex;
-  const recent = Math.max(0, current - 1);
-  const base = Math.max(0, current - 2);
-  const challenge = Math.min(curriculum.length - 1, current + 1);
-  return [
-    ...Array(pattern.center).fill(current),
-    ...Array(pattern.recent).fill(recent),
-    ...Array(pattern.base).fill(base),
-    ...Array(pattern.challenge).fill(challenge)
-  ].slice(0, SET_SIZE);
-}
-
-function summarize(answers, ratingBefore) {
-  const firstCorrect = answers.filter((q) => q.initialCorrect).length;
-  const finalCorrect = answers.filter((q) => q.finalCorrect).length;
-  const avgFirstTime = average(answers.map((q) => q.firstTime));
-  const targetTime = average(answers.map((q) => q.type.targetSeconds));
-  return { questions: answers, firstCorrect, finalCorrect, avgFirstTime, targetTime, ratingBefore };
-}
-
-function judge(summary) {
-  const excellent = summary.firstCorrect === SET_SIZE && summary.avgFirstTime <= summary.targetTime * 1.15;
-  const poor = summary.finalCorrect <= 5 || summary.firstCorrect <= 4 || summary.avgFirstTime > summary.targetTime * 2.0;
-  if (excellent) return 'advance';
-  if (poor) return 'regress';
-  return 'stay';
-}
-
-function calculateRateDelta(summary, outcome, patternStayCount) {
-  const possible = summary.questions.reduce((sum, q) => sum + 1.25 * q.type.difficulty, 0);
-  const achieved = summary.questions.reduce((sum, q) => {
-    const resultFactor = q.initialCorrect ? 1 : q.retryCorrect ? 0.45 : 0;
-    const speedFactor = getSpeedFactor(q.firstTime, q.type.targetSeconds);
-    return sum + resultFactor * speedFactor * q.type.difficulty;
-  }, 0);
-  const performanceRatio = possible ? achieved / possible : 0;
-  const avgDifficulty = average(summary.questions.map((q) => q.type.difficulty));
-  const expectedRatio = clamp(0.27 + Math.log10(summary.ratingBefore + 100) / 22, 0.30, 0.78);
-  const inflation = 260 * Math.pow(avgDifficulty, 1.35) * (1 + Math.log2(avgDifficulty + 1));
-  const suppression = 1 / (1 + Math.log10(summary.ratingBefore + 10) / 5);
-  let delta = (performanceRatio - expectedRatio) * inflation;
-  if (summary.firstCorrect === SET_SIZE && summary.avgFirstTime <= summary.targetTime * 1.15) delta += 0.12 * inflation;
-  if (summary.finalCorrect === SET_SIZE && summary.firstCorrect < SET_SIZE) delta += 0.04 * inflation;
-  if (summary.finalCorrect <= 6) delta -= 0.08 * inflation;
-  delta *= suppression;
-  if (outcome === 'stay' && delta > 0) delta *= Math.pow(0.5, patternStayCount + 1);
-  const cap = Math.max(80, 1200 * Math.pow(avgDifficulty, 1.1));
-  return Math.round(clamp(delta, -cap * 0.45, cap));
-}
-
-function getSpeedFactor(seconds, targetSeconds) {
-  if (seconds <= targetSeconds * 0.65) return 1.25;
-  if (seconds <= targetSeconds) return 1.08;
-  if (seconds <= targetSeconds * 1.35) return 0.92;
-  if (seconds <= targetSeconds * 1.75) return 0.72;
-  return 0.52;
-}
-
-function average(values) {
-  return values.reduce((s, v) => s + v, 0) / values.length;
-}
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function randomNormal(mean, sd) {
-  let u = 0, v = 0;
-  while (u === 0) u = Math.random();
-  while (v === 0) v = Math.random();
-  return mean + sd * Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
-}
-
+function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
+function avg(values) { return values.reduce((a, b) => a + b, 0) / Math.max(1, values.length); }
 function formatRate(value) {
   const digits = String(Math.max(0, Math.round(value)));
   const parts = [];
   for (let end = digits.length; end > 0; end -= 4) parts.unshift(digits.slice(Math.max(0, end - 4), end));
-  return parts.join(' ');
+  return parts.join(' ');
 }
 
-for (const key of Object.keys(profiles)) {
-  const rows = simulate(profiles[key], 120);
-  console.log(`\n${profiles[key].label}`);
-  console.table(rows.map((r) => ({ ...r, rating: formatRate(r.rating) })));
+function speedFactor(seconds, target) {
+  if (seconds <= target * 0.65) return 1.25;
+  if (seconds <= target) return 1.08;
+  if (seconds <= target * 1.35) return 0.92;
+  if (seconds <= target * 1.75) return 0.72;
+  return 0.52;
+}
+
+function planTypes(typeIndex, patternIndex) {
+  const p = PATTERNS[patternIndex];
+  const ids = [];
+  const push = (idx, n) => { for (let i = 0; i < n; i++) ids.push(clamp(idx, 0, CURRICULUM.length - 1)); };
+  push(typeIndex, p.center);
+  push(typeIndex - 1, p.recent);
+  push(typeIndex - 2, p.base);
+  push(typeIndex + 1, p.challenge);
+  while (ids.length < SET_SIZE) ids.push(typeIndex);
+  return ids.slice(0, SET_SIZE);
+}
+
+function judge(summary) {
+  const excellent = summary.firstCorrect === SET_SIZE && summary.avgTime <= summary.targetTime;
+  const strong = summary.firstCorrect === SET_SIZE && summary.avgTime <= summary.targetTime * 1.15;
+  const good = summary.finalCorrect >= 9 && summary.firstCorrect >= 8 && summary.avgTime <= summary.targetTime * 1.45;
+  const poor = summary.finalCorrect <= 5 || summary.firstCorrect <= 4 || summary.avgTime > summary.targetTime * 2.0;
+  if (excellent) return 'skip';
+  if (strong || good) return 'advance';
+  if (poor) return 'regress';
+  return 'stay';
+}
+
+function delta(summary, state, outcome) {
+  const possible = summary.items.reduce((sum, item) => sum + 1.25 * item.type.difficulty, 0);
+  const achieved = summary.items.reduce((sum, item) => {
+    const result = item.correct ? 1 : item.retryCorrect ? 0.45 : 0;
+    return sum + result * speedFactor(item.time, item.type.targetSeconds) * item.type.difficulty;
+  }, 0);
+  const ratio = possible ? achieved / possible : 0;
+  const avgDifficulty = avg(summary.items.map((i) => i.type.difficulty));
+  const expected = clamp(0.27 + Math.log10(state.rating + 100) / 22, 0.30, 0.78);
+  const inflation = 260 * Math.pow(avgDifficulty, 1.35) * (1 + Math.log2(avgDifficulty + 1));
+  const suppression = 1 / (1 + Math.log10(state.rating + 10) / 5);
+  let d = (ratio - expected) * inflation;
+  if (summary.firstCorrect === SET_SIZE && summary.avgTime <= summary.targetTime * 1.15) d += 0.12 * inflation;
+  if (summary.finalCorrect === SET_SIZE && summary.firstCorrect < SET_SIZE) d += 0.04 * inflation;
+  if (summary.finalCorrect <= 6) d -= 0.08 * inflation;
+  if (outcome === 'skip') d += 0.1 * inflation;
+  d *= suppression;
+  if (outcome === 'stay' && d > 0) d *= Math.pow(0.5, state.patternStayCount + 1);
+  const cap = Math.max(80, 1200 * Math.pow(avgDifficulty, 1.1));
+  return Math.round(clamp(d, -cap * 0.45, cap * (outcome === 'skip' ? 1.35 : 1)));
+}
+
+function advance(state, outcome) {
+  const p = state.patternIndex;
+  if (outcome === 'stay') { state.patternStayCount += 1; return; }
+  state.patternStayCount = 0;
+  if (outcome === 'regress') {
+    if (p === 3 && state.typeIndex > 0) { state.typeIndex -= 1; state.patternIndex = 2; return; }
+    state.patternIndex = Math.max(0, p - 1); return;
+  }
+  if (outcome === 'skip') {
+    if (p === 0 || p === 1) { state.patternIndex = 2; return; }
+    if (p === 2) { state.typeIndex = Math.min(CURRICULUM.length - 1, state.typeIndex + 1); state.patternIndex = 3; return; }
+    if (p === 3) { state.patternIndex = 5; return; }
+    if (p === 4 || p === 5) { state.patternIndex = 0; return; }
+  }
+  if (p === 2) { state.typeIndex = Math.min(CURRICULUM.length - 1, state.typeIndex + 1); state.patternIndex = 3; return; }
+  if (p === 5) { state.patternIndex = 0; return; }
+  state.patternIndex = Math.min(PATTERNS.length - 1, p + 1);
+}
+
+function runLearner(model, minutes) {
+  const state = { rating: 300, typeIndex: 0, patternIndex: 0, patternStayCount: 0, skill: 0, learned: new Set(), skips: 0, stays: 0 };
+  let elapsedMinutes = 0;
+  let sets = 0;
+  while (elapsedMinutes < minutes) {
+    const typeIndexes = planTypes(state.typeIndex, state.patternIndex);
+    const items = typeIndexes.map((idx) => {
+      const type = CURRICULUM[idx];
+      const difficultyPenalty = (type.difficulty - 1) * 0.065;
+      const pCorrect = clamp(model.accuracy + state.skill - difficultyPenalty - model.carelessness, 0.18, 0.995);
+      const correct = Math.random() < pCorrect;
+      const retryCorrect = !correct && Math.random() < clamp(pCorrect + 0.12, 0, 0.98);
+      const timeNoise = 0.82 + Math.random() * 0.42;
+      const time = type.targetSeconds * model.speed * Math.max(0.45, 1.05 - state.skill * 0.7) * timeNoise;
+      return { type, correct, retryCorrect, time };
+    });
+    const summary = {
+      items,
+      firstCorrect: items.filter((i) => i.correct).length,
+      finalCorrect: items.filter((i) => i.correct || i.retryCorrect).length,
+      avgTime: avg(items.map((i) => i.time)),
+      targetTime: avg(items.map((i) => i.type.targetSeconds))
+    };
+    const outcome = judge(summary);
+    if (outcome === 'skip') state.skips += 1;
+    if (outcome === 'stay') state.stays += 1;
+    if (PATTERNS[state.patternIndex].id === 'A' && outcome === 'skip') state.learned.add(CURRICULUM[state.typeIndex].id);
+    state.rating = clamp(state.rating + delta(summary, state, outcome), 0, MAX_RATE);
+    advance(state, outcome);
+    state.skill = clamp(state.skill + model.learning * (0.5 + summary.finalCorrect / SET_SIZE), 0, 0.55);
+    elapsedMinutes += avg(items.map((i) => i.time)) * SET_SIZE / 60 + 0.45;
+    sets += 1;
+  }
+  return { model: model.name, minutes, sets, rating: state.rating, type: CURRICULUM[state.typeIndex].label, pattern: PATTERNS[state.patternIndex].id, skips: state.skips, stays: state.stays, learned: state.learned.size };
+}
+
+for (const minutes of [30, 60, 300, 600]) {
+  console.log(`\n=== ${minutes}分 ===`);
+  for (const learner of LEARNERS) {
+    const runs = Array.from({ length: 40 }, () => runLearner(learner, minutes));
+    const rating = Math.round(avg(runs.map((r) => r.rating)));
+    const sets = Math.round(avg(runs.map((r) => r.sets)));
+    const skips = Math.round(avg(runs.map((r) => r.skips)));
+    const learned = Math.round(avg(runs.map((r) => r.learned)));
+    const typical = runs[Math.floor(runs.length / 2)];
+    console.log(`${learner.name.padEnd(5)} rate=${formatRate(rating).padStart(9)} sets=${String(sets).padStart(3)} skips=${String(skips).padStart(2)} learned=${learned} type=${typical.type} pattern=${typical.pattern}`);
+  }
 }
