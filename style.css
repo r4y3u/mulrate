@@ -378,3 +378,37 @@ input[type="radio"] { width: 19px; height: 19px; accent-color: var(--accent); }
   .keypad { gap: 6px; }
   .key { border-radius: 14px; }
 }
+
+/* beta.3: keyboard-shaped keypad refinements */
+.keypad.topLeft,
+.keypad.pseudo {
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  grid-template-rows: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  align-content: center;
+}
+
+.keypad.topLeft .key,
+.keypad.pseudo .key {
+  grid-column: auto;
+  min-height: 42px;
+  border-radius: 13px;
+  font-size: clamp(1rem, 3.8dvh, 1.45rem);
+}
+
+.keypad.topLeft .key.control,
+.keypad.pseudo .key.control {
+  font-size: clamp(1rem, 3.4dvh, 1.35rem);
+}
+
+.keypad.topLeft .space-key {
+  font-size: clamp(0.76rem, 2.1dvh, 0.98rem);
+}
+
+.keypad.topLeft .row2-first,
+.keypad.topLeft .row3-first,
+.keypad.pseudo .row2-first,
+.keypad.pseudo .row3-first,
+.keypad.pseudo .ok {
+  grid-column: auto;
+}

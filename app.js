@@ -497,7 +497,10 @@
       addInlineButton('答え直しへ', 'primary', () => renderRetryQuestion());
       addInlineButton('答え直しせず確定', 'secondary', () => finalizeResult());
     } else {
-      addInlineButton('レート確定', 'primary', () => finalizeResult());
+      els.subInfo.textContent = 'リザルトへ進みます';
+      window.setTimeout(() => {
+        if (session.phase === 'reviewIntro' && !session.ratingApplied) finalizeResult();
+      }, 520);
     }
   }
 
@@ -918,6 +921,12 @@
 
   function setAnswerDisplay(value) {
     els.answerDisplay.textContent = value || '\u00a0';
+    if (['playing', 'retry'].includes(session.phase) && !session.locked) {
+      els.answerDisplay.classList.remove('pulse');
+      void els.answerDisplay.offsetWidth;
+      els.answerDisplay.classList.add('pulse');
+      window.setTimeout(() => els.answerDisplay.classList.remove('pulse'), 150);
+    }
   }
 
   function addInlineButton(text, kind, handler) {
@@ -959,6 +968,7 @@
     if (action === 'backspace') {
       session.input = session.input.slice(0, -1);
       setAnswerDisplay(session.input);
+      setMessage('', '');
       return;
     }
 
@@ -984,6 +994,9 @@
       button.textContent = key.label;
       button.dataset.action = key.action;
       if (/^\d$/.test(key.action)) button.dataset.digit = key.action;
+      if (key.keyName) button.dataset.keyName = key.keyName;
+      if (key.row) button.style.gridRow = String(key.row);
+      if (key.col) button.style.gridColumn = `${key.col} / span ${key.span || 2}`;
       button.setAttribute('aria-label', key.aria || key.label);
       button.addEventListener('pointerdown', (event) => {
         event.preventDefault();
@@ -994,48 +1007,48 @@
     }
 
     if (layout === 'normal') {
-      els.keyHint.textContent = '数字キー：入力　Enter：決定　Backspace：消す';
+      els.keyHint.textContent = 'デフォルト　数字キー：入力　Enter / Space：決定　Backspace：1文字削除';
     } else if (layout === 'topLeft') {
-      els.keyHint.textContent = '1 2 3 / Q W E / A S D F　Space：決定';
+      els.keyHint.textContent = '疑似テンキー左　1 2 3 / Q W E / A S D F / Z　Space：決定';
     } else {
-      els.keyHint.textContent = '7 8 9 0 / U I O / J K L +　;：決定';
+      els.keyHint.textContent = '疑似テンキー右　7 8 9 0 / U I O / J K L ;　Backspace：1文字削除';
     }
   }
 
   function getKeypadKeys(layout) {
     if (layout === 'topLeft') {
       return [
-        digitKey('1'), digitKey('2'), digitKey('3'), controlKey('消', 'backspace'),
-        digitKey('4', 'row2-first'), digitKey('5'), digitKey('6'), controlKey('C', 'clear'),
-        digitKey('7', 'row3-first'), digitKey('8'), digitKey('9'), digitKey('0'),
-        okKey('Space', 'space-key')
+        digitKey('1', '', 1, 3, 2, '1'), digitKey('2', '', 1, 5, 2, '2'), digitKey('3', '', 1, 7, 2, '3'),
+        digitKey('4', '', 2, 2, 2, 'Q'), digitKey('5', '', 2, 4, 2, 'W'), digitKey('6', '', 2, 6, 2, 'E'),
+        digitKey('7', '', 3, 1, 2, 'A'), digitKey('8', '', 3, 3, 2, 'S'), digitKey('9', '', 3, 5, 2, 'D'), digitKey('0', '', 3, 7, 2, 'F'),
+        controlKey('←', 'backspace', '', 4, 1, 2, 'Z'), okKey('Space', 'space-key', 4, 4, 5, 'Space')
       ];
     }
     if (layout === 'pseudo') {
       return [
-        digitKey('7'), digitKey('8'), digitKey('9'), digitKey('0'),
-        digitKey('4', 'row2-first'), digitKey('5'), digitKey('6'), controlKey('C', 'clear'),
-        digitKey('1', 'row3-first'), digitKey('2'), digitKey('3'), okKey(';')
+        digitKey('7', '', 1, 2, 2, '7'), digitKey('8', '', 1, 4, 2, '8'), digitKey('9', '', 1, 6, 2, '9'), digitKey('0', '', 1, 8, 2, '0'),
+        digitKey('4', '', 2, 1, 2, 'U'), digitKey('5', '', 2, 3, 2, 'I'), digitKey('6', '', 2, 5, 2, 'O'), controlKey('←', 'backspace', '', 2, 7, 2, 'Backspace'),
+        digitKey('1', '', 3, 2, 2, 'J'), digitKey('2', '', 3, 4, 2, 'K'), digitKey('3', '', 3, 6, 2, 'L'), okKey(';', '', 3, 8, 2, ';')
       ];
     }
     return [
       digitKey('7'), digitKey('8'), digitKey('9'),
       digitKey('4'), digitKey('5'), digitKey('6'),
       digitKey('1'), digitKey('2'), digitKey('3'),
-      controlKey('C', 'clear'), digitKey('0'), okKey('OK')
+      controlKey('←', 'backspace'), digitKey('0'), okKey('OK')
     ];
   }
 
-  function digitKey(n, className = '') {
-    return { label: n, action: n, aria: `${n}を入力`, className };
+  function digitKey(n, className = '', row = null, col = null, span = 2, keyName = '') {
+    return { label: n, action: n, aria: `${n}を入力`, className, row, col, span, keyName };
   }
 
-  function controlKey(label, action) {
-    return { label, action, kind: 'control' };
+  function controlKey(label, action, className = '', row = null, col = null, span = 2, keyName = '') {
+    return { label, action, kind: 'control', className, row, col, span, keyName };
   }
 
-  function okKey(label, className = '') {
-    return { label, action: 'submit', kind: 'ok', className };
+  function okKey(label, className = '', row = null, col = null, span = 2, keyName = '') {
+    return { label, action: 'submit', kind: 'ok', className, row, col, span, keyName };
   }
 
   function handleKeyboard(event) {
@@ -1051,17 +1064,17 @@
 
   function mapPhysicalKey(key, layout) {
     if (/^\d$/.test(key)) return key;
-    if (key === 'Enter') return 'submit';
+    if (key === 'Enter' || key === ' ') return 'submit';
     if (key === 'Backspace') return 'backspace';
-    if (key === 'Delete' || key === 'Escape') return 'clear';
+    if (key === 'Delete') return 'backspace';
 
     if (layout === 'topLeft') {
-      const map = { q: '4', w: '5', e: '6', a: '7', s: '8', d: '9', f: '0', ' ': 'submit' };
+      const map = { q: '4', w: '5', e: '6', a: '7', s: '8', d: '9', f: '0', z: 'backspace', ' ': 'submit' };
       return map[key.toLowerCase()] || null;
     }
 
     if (layout === 'pseudo') {
-      const map = { u: '4', i: '5', o: '6', j: '1', k: '2', l: '3', '+': 'clear', ';': 'submit', ':': 'submit' };
+      const map = { u: '4', i: '5', o: '6', j: '1', k: '2', l: '3', '+': 'backspace', ';': 'submit', ':': 'submit', ' ': 'submit' };
       return map[key.toLowerCase()] || null;
     }
 
