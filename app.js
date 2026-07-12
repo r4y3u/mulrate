@@ -4,6 +4,7 @@
   const STORAGE_KEY = 'mulrate_v1_0_0_beta2_state';
   const MAX_RATE = 99999999;
   const SET_SIZE = 10;
+  const ANSWER_EPSILON = 1e-9;
 
   const PATTERNS = [
     { id: 'A', center: 10, recent: 0, base: 0, challenge: 0 },
@@ -12,6 +13,12 @@
     { id: 'D', center: 5, recent: 3, base: 2, challenge: 0 },
     { id: 'E', center: 7, recent: 2, base: 1, challenge: 0 },
     { id: 'F', center: 9, recent: 1, base: 0, challenge: 0 }
+  ];
+
+  const KUKU_PATTERNS = [
+    { id: 'A-1', label: 'のぼり', order: 'asc' },
+    { id: 'A-2', label: 'くだり', order: 'desc' },
+    { id: 'A-3', label: 'ばらばら', order: 'random' }
   ];
 
   const DEFAULT_STATE = {
@@ -55,8 +62,7 @@
     homeRate: document.getElementById('homeRate'),
     homePoint: document.getElementById('homePoint'),
     homeDetail: document.getElementById('homeDetail'),
-    learnedSummary: document.getElementById('learnedSummary'),
-    startButton: document.getElementById('startButton'),
+        startButton: document.getElementById('startButton'),
     learnedButton: document.getElementById('learnedButton'),
     learnedList: document.getElementById('learnedList'),
     learnedBackButton: document.getElementById('learnedBackButton'),
@@ -71,7 +77,6 @@
     inlineActions: document.getElementById('inlineActions'),
     resumeButton: document.getElementById('resumeButton'),
     pauseHomeButton: document.getElementById('pauseHomeButton'),
-    saveSettingsButton: document.getElementById('saveSettingsButton'),
     resetDataButton: document.getElementById('resetDataButton'),
     inputZone: document.getElementById('inputZone'),
     operationStatus: document.getElementById('operationStatus'),
@@ -86,33 +91,30 @@
   };
 
   const CURRICULUM = [
+    // 乗法の基礎：0〜20の段を、各段 A-1/A-2/A-3 で確認する。
+    ...buildKukuTypes('base', range(1, 10)),
+
+    // 位取りの導入。2けた×1けたに入る前に、10倍と何十×1けたを独立して扱う。
     {
-      id: 'KUKU_5_2', label: '九九 5・2の段', point: '5×2', example: [5, 2], difficulty: 1.0, targetSeconds: 2.8,
-      generate: () => kukuProblem([5, 2], [1, 2, 3, 4, 5, 6, 7, 8, 9])
+      id: 'PLACE_10X_100X', label: '10倍・100倍', point: '23×10', example: [23, 10], difficulty: 1.55, targetSeconds: 4.4,
+      generate: () => {
+        const a = randInt(2, 99);
+        const b = Math.random() < 0.72 ? 10 : 100;
+        return makeProblem('PLACE_10X_100X', a, b);
+      }
     },
     {
-      id: 'KUKU_3_4', label: '九九 3・4の段', point: '3×4', example: [3, 4], difficulty: 1.12, targetSeconds: 3.0,
-      generate: () => kukuProblem([3, 4], [1, 2, 3, 4, 5, 6, 7, 8, 9])
+      id: 'TENS_X_1D', label: '何十×1けた', point: '20×3', example: [20, 3], difficulty: 1.72, targetSeconds: 4.5,
+      generate: () => makeProblem('TENS_X_1D', randInt(2, 9) * 10, randInt(2, 9))
     },
+
+    // M2D1_NC 直前の総合導入。11〜20の段と0〜20混合は、2けた×1けた導入と同等難度として扱う。
+    makeKukuMixType('KUKU_MIX_11_20', '11〜20の段 混合', '16×7', range(11, 20), range(1, 10), 1.86, 4.8),
+    makeKukuMixType('KUKU_MIX_0_20', '0〜20の段 混合', '18×9', range(0, 20), range(1, 10), 1.94, 5.0),
+
     {
-      id: 'KUKU_6', label: '九九 6の段', point: '6×7', example: [6, 7], difficulty: 1.24, targetSeconds: 3.1,
-      generate: () => kukuProblem([6], [2, 3, 4, 5, 6, 7, 8, 9])
-    },
-    {
-      id: 'KUKU_7_8', label: '九九 7・8の段', point: '7×8', example: [7, 8], difficulty: 1.38, targetSeconds: 3.25,
-      generate: () => kukuProblem([7, 8], [2, 3, 4, 5, 6, 7, 8, 9])
-    },
-    {
-      id: 'KUKU_9_1', label: '九九 9・1の段', point: '9×1', example: [9, 1], difficulty: 1.30, targetSeconds: 3.15,
-      generate: () => kukuProblem([9, 1], [1, 2, 3, 4, 5, 6, 7, 8, 9])
-    },
-    {
-      id: 'KUKU_MIX', label: '九九 混合', point: '8×9', example: [8, 9], difficulty: 1.52, targetSeconds: 3.3,
-      generate: () => kukuProblem([1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 2, 3, 4, 5, 6, 7, 8, 9])
-    },
-    {
-      id: 'M2D1_NC', label: '2けた×1けた 繰り上がりなし', point: '21×3', example: [21, 3], difficulty: 1.9, targetSeconds: 4.8,
-      generate: () => generateByCondition('M2D1_NC', () => [randInt(11, 99), randInt(2, 9)], ([a, b]) => countCarriesByDigit(a, b) === 0)
+      id: 'M2D1_NC', label: '2けた×1けた 繰り上がりなし', point: '21×3', example: [21, 3], difficulty: 1.95, targetSeconds: 4.9,
+      generate: () => generateByCondition('M2D1_NC', () => [randInt(11, 99), randInt(2, 9)], ([a, b]) => countCarriesByDigit(a, b) === 0 && a % 10 !== 0)
     },
     {
       id: 'M2D1_C_ONES', label: '2けた×1けた 一の位で繰り上がり', point: '27×3', example: [27, 3], difficulty: 2.18, targetSeconds: 5.4,
@@ -136,22 +138,33 @@
       generate: () => generateByCondition('M2D1_C_BOTH', () => [randInt(11, 99), randInt(2, 9)], ([a, b]) => countCarriesByDigit(a, b) >= 2)
     },
     {
-      id: 'M2D1_ZERO_ONES', label: '2けた×1けた 被乗数の一の位が0', point: '40×7', example: [40, 7], difficulty: 2.05, targetSeconds: 5.0,
-      generate: () => {
-        const a = randInt(1, 9) * 10;
-        const b = randInt(2, 9);
-        return makeProblem('M2D1_ZERO_ONES', a, b);
-      }
+      id: 'M2D1_MIX', label: '2けた×1けた 混合', point: '56×7', example: [56, 7], difficulty: 2.68, targetSeconds: 6.5,
+      generate: () => makeProblem('M2D1_MIX', randInt(11, 99), randInt(2, 9))
+    },
+
+    // 3けた×1けたの前提。何百×1けたを独立して確認する。
+    {
+      id: 'HUNDREDS_X_1D', label: '何百×1けた', point: '200×3', example: [200, 3], difficulty: 2.35, targetSeconds: 5.8,
+      generate: () => makeProblem('HUNDREDS_X_1D', randInt(1, 9) * 100, randInt(2, 9))
     },
     {
       id: 'M3D1_NC', label: '3けた×1けた 繰り上がりなし', point: '213×2', example: [213, 2], difficulty: 2.85, targetSeconds: 7.2,
       generate: () => generateByCondition('M3D1_NC', () => [randInt(111, 999), randInt(2, 9)], ([a, b]) => countCarriesByDigit(a, b) === 0 && !String(a).includes('0'))
     },
     {
-      id: 'M3D1_C_BASIC', label: '3けた×1けた 繰り上がりあり', point: '126×4', example: [126, 4], difficulty: 3.18, targetSeconds: 8.0,
-      generate: () => generateByCondition('M3D1_C_BASIC', () => [randInt(111, 999), randInt(2, 9)], ([a, b]) => {
-        const c = countCarriesByDigit(a, b);
-        return c >= 1 && c <= 2 && !String(a).includes('0');
+      id: 'M3D1_C_ONES', label: '3けた×1けた 一の位で繰り上がり', point: '128×3', example: [128, 3], difficulty: 3.05, targetSeconds: 7.8,
+      generate: () => generateByCondition('M3D1_C_ONES', () => [randInt(111, 999), randInt(2, 9)], ([a, b]) => {
+        const onesCarry = (a % 10) * b >= 10;
+        return onesCarry && countCarriesByDigit(a, b) <= 2 && !String(a).includes('0');
+      })
+    },
+    {
+      id: 'M3D1_C_TENS', label: '3けた×1けた 十の位で繰り上がり', point: '263×4', example: [263, 4], difficulty: 3.18, targetSeconds: 8.0,
+      generate: () => generateByCondition('M3D1_C_TENS', () => [randInt(111, 999), randInt(2, 9)], ([a, b]) => {
+        const ones = a % 10;
+        const tens = Math.floor(a / 10) % 10;
+        const carryFromOnes = Math.floor((ones * b) / 10);
+        return tens * b + carryFromOnes >= 10 && countCarriesByDigit(a, b) <= 2 && !String(a).includes('0');
       })
     },
     {
@@ -159,17 +172,44 @@
       generate: () => generateByCondition('M3D1_C_CHAIN', () => [randInt(111, 999), randInt(2, 9)], ([a, b]) => countCarriesByDigit(a, b) >= 3)
     },
     {
-      id: 'M3D1_ZERO_INSIDE', label: '3けた×1けた 被乗数に0を含む', point: '304×6', example: [304, 6], difficulty: 3.08, targetSeconds: 8.2,
+      id: 'M3D1_ZERO_INSIDE', label: '3けた×1けた 0を含む', point: '304×6', example: [304, 6], difficulty: 3.08, targetSeconds: 8.2,
       generate: () => generateByCondition('M3D1_ZERO_INSIDE', () => [randInt(101, 909), randInt(2, 9)], ([a]) => String(a).includes('0') && a % 100 !== 0)
     },
     {
-      id: 'M2D2_X10', label: '2けた×10', point: '23×10', example: [23, 10], difficulty: 3.55, targetSeconds: 8.8,
-      generate: () => makeProblem('M2D2_X10', randInt(12, 99), 10)
+      id: 'M3D1_MIX', label: '3けた×1けた 混合', point: '476×8', example: [476, 8], difficulty: 3.65, targetSeconds: 9.2,
+      generate: () => makeProblem('M3D1_MIX', randInt(101, 999), randInt(2, 9))
+    },
+
+    // 2けた・3けたに、10・何十をかける準備。
+    {
+      id: 'TENS_X_TENS', label: '何十×何十', point: '30×40', example: [30, 40], difficulty: 3.25, targetSeconds: 7.6,
+      generate: () => makeProblem('TENS_X_TENS', randInt(2, 9) * 10, randInt(2, 9) * 10)
     },
     {
-      id: 'M2D2_TENS', label: '2けた×何十', point: '23×20', example: [23, 20], difficulty: 3.75, targetSeconds: 9.8,
-      generate: () => makeProblem('M2D2_TENS', randInt(12, 99), randInt(2, 9) * 10)
+      id: 'HUNDREDS_X_TENS', label: '何百×何十', point: '200×30', example: [200, 30], difficulty: 3.45, targetSeconds: 8.2,
+      generate: () => makeProblem('HUNDREDS_X_TENS', randInt(1, 9) * 100, randInt(2, 9) * 10)
     },
+    {
+      id: 'M2D_X10', label: '2けた×10', point: '23×10', example: [23, 10], difficulty: 3.55, targetSeconds: 8.8,
+      generate: () => makeProblem('M2D_X10', randInt(12, 99), 10)
+    },
+    {
+      id: 'M2D_X_TENS', label: '2けた×何十', point: '23×20', example: [23, 20], difficulty: 3.75, targetSeconds: 9.8,
+      generate: () => makeProblem('M2D_X_TENS', randInt(12, 99), randInt(2, 9) * 10)
+    },
+    {
+      id: 'M3D_X10', label: '3けた×10', point: '123×10', example: [123, 10], difficulty: 3.90, targetSeconds: 10.2,
+      generate: () => makeProblem('M3D_X10', randInt(101, 999), 10)
+    },
+    {
+      id: 'M3D_X_TENS', label: '3けた×何十', point: '123×20', example: [123, 20], difficulty: 4.15, targetSeconds: 11.5,
+      generate: () => makeProblem('M3D_X_TENS', randInt(101, 999), randInt(2, 9) * 10)
+    },
+
+    // 乗数11〜20の拡張。2けた×2けた前の暗算土台として扱う。
+    ...buildKukuTypes('extended', range(11, 20)),
+    makeKukuMixType('KUKU_EXT_MIX_0_20_X11_20', '0〜20×11〜20 混合', '18×17', range(0, 20), range(11, 20), 3.95, 10.8),
+
     {
       id: 'M2D2_TEN', label: '2けた×10台', point: '23×12', example: [23, 12], difficulty: 4.10, targetSeconds: 12.0,
       generate: () => makeProblem('M2D2_TEN', randInt(12, 99), randInt(11, 19))
@@ -194,6 +234,73 @@
     {
       id: 'M2D2_MIX', label: '2けた×2けた 混合', point: '76×34', example: [76, 34], difficulty: 5.05, targetSeconds: 15.0,
       generate: () => makeProblem('M2D2_MIX', randInt(12, 99), randInt(12, 99))
+    },
+
+    {
+      id: 'M3D2_TEN', label: '3けた×10台', point: '123×12', example: [123, 12], difficulty: 5.28, targetSeconds: 17.5,
+      generate: () => makeProblem('M3D2_TEN', randInt(101, 999), randInt(11, 19))
+    },
+    {
+      id: 'M3D2_NO_CARRY', label: '3けた×2けた 繰り上がり少なめ', point: '213×21', example: [213, 21], difficulty: 5.55, targetSeconds: 18.8,
+      generate: () => generateByCondition('M3D2_NO_CARRY', () => [randInt(101, 499), randInt(11, 39)], ([a, b]) => countCarriesTwoDigit(a, b) <= 2)
+    },
+    {
+      id: 'M3D2_CARRY', label: '3けた×2けた 繰り上がりあり', point: '386×47', example: [386, 47], difficulty: 6.05, targetSeconds: 21.5,
+      generate: () => generateByCondition('M3D2_CARRY', () => [randInt(222, 999), randInt(22, 99)], ([a, b]) => countCarriesTwoDigit(a, b) >= 3)
+    },
+    {
+      id: 'M3D2_ZERO_PRODUCT', label: '3けた×2けた 0を含む計算', point: '304×20', example: [304, 20], difficulty: 5.72, targetSeconds: 20.0,
+      generate: () => {
+        const a = Math.random() < 0.5 ? randInt(101, 909) : randInt(1, 9) * 100 + randInt(1, 9);
+        const b = Math.random() < 0.55 ? randInt(2, 9) * 10 : randInt(11, 99);
+        return makeProblem('M3D2_ZERO_PRODUCT', a, b);
+      }
+    },
+    {
+      id: 'M3D2_MIX', label: '3けた×2けた 混合', point: '728×36', example: [728, 36], difficulty: 6.35, targetSeconds: 23.0,
+      generate: () => makeProblem('M3D2_MIX', randInt(101, 999), randInt(11, 99))
+    },
+
+    // 小数の乗法。0.?×? から入り、1.2×3、小数×小数へ進む。
+    {
+      id: 'DEC_TENTHS_LT1_X_1D', label: '0.?×1けた', point: '0.2×3', example: [0.2, 3], difficulty: 4.65, targetSeconds: 11.5,
+      generate: () => makeProblem('DEC_TENTHS_LT1_X_1D', tenths(randInt(1, 9)), randInt(2, 9))
+    },
+    {
+      id: 'DEC_TENTHS_X_1D', label: '小数第一位×1けた', point: '1.2×3', example: [1.2, 3], difficulty: 4.95, targetSeconds: 12.8,
+      generate: () => makeProblem('DEC_TENTHS_X_1D', tenths(randInt(11, 99)), randInt(2, 9))
+    },
+    {
+      id: 'DEC_HUNDREDTHS_LT1_X_1D', label: '0.??×1けた', point: '0.25×4', example: [0.25, 4], difficulty: 5.18, targetSeconds: 14.0,
+      generate: () => makeProblem('DEC_HUNDREDTHS_LT1_X_1D', hundredths(randInt(1, 99)), randInt(2, 9))
+    },
+    {
+      id: 'DEC_HUNDREDTHS_X_1D', label: '小数第二位×1けた', point: '1.25×4', example: [1.25, 4], difficulty: 5.35, targetSeconds: 14.8,
+      generate: () => makeProblem('DEC_HUNDREDTHS_X_1D', hundredths(randInt(101, 999)), randInt(2, 9))
+    },
+    {
+      id: 'DEC_X_WHOLE_2D', label: '小数×2けた整数', point: '1.2×23', example: [1.2, 23], difficulty: 5.85, targetSeconds: 18.5,
+      generate: () => makeProblem('DEC_X_WHOLE_2D', Math.random() < 0.55 ? tenths(randInt(11, 99)) : hundredths(randInt(101, 999)), randInt(12, 99))
+    },
+    {
+      id: 'DEC_X_10_100', label: '小数×10・100', point: '1.23×10', example: [1.23, 10], difficulty: 4.35, targetSeconds: 9.6,
+      generate: () => makeProblem('DEC_X_10_100', hundredths(randInt(1, 999)), Math.random() < 0.65 ? 10 : 100)
+    },
+    {
+      id: 'WHOLE_X_DEC_TENTHS', label: '整数×0.?', point: '3×0.2', example: [3, 0.2], difficulty: 5.45, targetSeconds: 14.5,
+      generate: () => makeProblem('WHOLE_X_DEC_TENTHS', randInt(2, 99), tenths(randInt(1, 9)))
+    },
+    {
+      id: 'DEC_TENTHS_X_TENTHS', label: '小数第一位×小数第一位', point: '1.2×3.4', example: [1.2, 3.4], difficulty: 6.25, targetSeconds: 21.0,
+      generate: () => makeProblem('DEC_TENTHS_X_TENTHS', tenths(randInt(2, 99)), tenths(randInt(2, 99)))
+    },
+    {
+      id: 'DEC_HUNDREDTHS_X_TENTHS', label: '小数第二位×小数第一位', point: '1.25×3.4', example: [1.25, 3.4], difficulty: 6.65, targetSeconds: 24.0,
+      generate: () => makeProblem('DEC_HUNDREDTHS_X_TENTHS', hundredths(randInt(2, 999)), tenths(randInt(2, 99)))
+    },
+    {
+      id: 'DECIMAL_MUL_MIX', label: '小数のかけ算 混合', point: '2.4×1.5', example: [2.4, 1.5], difficulty: 7.10, targetSeconds: 27.0,
+      generate: () => makeProblem('DECIMAL_MUL_MIX', Math.random() < 0.5 ? tenths(randInt(2, 99)) : hundredths(randInt(2, 999)), Math.random() < 0.5 ? tenths(randInt(2, 99)) : randInt(2, 99))
     }
   ];
 
@@ -202,6 +309,7 @@
   let audioContext = null;
   let isDrawing = false;
   let lastPoint = null;
+  let homeRateAnimationId = null;
 
   function createEmptySession() {
     return {
@@ -247,7 +355,7 @@
     next.recentProblems = Array.isArray(value.recentProblems) ? value.recentProblems.slice(-80) : [];
     next.history = Array.isArray(value.history) ? value.history.slice(-50) : [];
     next.progress.typeIndex = clamp(Math.trunc(next.progress.typeIndex || 0), 0, CURRICULUM.length - 1);
-    next.progress.patternIndex = clamp(Math.trunc(next.progress.patternIndex || 0), 0, PATTERNS.length - 1);
+    next.progress.patternIndex = clamp(Math.trunc(next.progress.patternIndex || 0), 0, maxPatternIndexForType(next.progress.typeIndex));
     next.progress.patternStayCount = Math.max(0, Math.trunc(next.progress.patternStayCount || 0));
     next.player.rating = clamp(Math.round(next.player.rating || 300), 0, MAX_RATE);
     next.player.highestRating = clamp(Math.round(next.player.highestRating || next.player.rating), 0, MAX_RATE);
@@ -273,9 +381,10 @@
       const avgFirstTime = Number(item.avgFirstTime || Infinity);
       const pattern = item.pattern || '';
       const outcome = item.outcome || '';
-      const basicCleared = pattern === 'A' && firstCorrect === SET_SIZE && avgFirstTime <= type.targetSeconds * 1.25;
-      const typeCleared = pattern === 'C' && ['advance', 'skip'].includes(outcome) && finalCorrect >= 9 && firstCorrect >= 8;
-      if (basicCleared || typeCleared) learned.add(type.id);
+      const kukuCleared = isKukuType(type) && (pattern === 'A-3' || outcome === 'kuku_skip_row') && firstCorrect === SET_SIZE && avgFirstTime <= type.targetSeconds * 1.8;
+      const basicCleared = !isKukuType(type) && pattern === 'A' && firstCorrect === SET_SIZE && avgFirstTime <= type.targetSeconds * 1.25;
+      const typeCleared = !isKukuType(type) && pattern === 'C' && (outcome === 'advance' || isSkipOutcome(outcome)) && finalCorrect >= 9 && firstCorrect >= 8;
+      if (kukuCleared || basicCleared || typeCleared) learned.add(type.id);
     }
 
     return Array.from(learned).filter((id) => CURRICULUM.some((type) => type.id === id));
@@ -301,6 +410,105 @@
     return Math.min(max, Math.max(min, value));
   }
 
+  function range(min, max) {
+    const values = [];
+    for (let n = min; n <= max; n++) values.push(n);
+    return values;
+  }
+
+  function buildKukuTypes(mode, multipliers) {
+    const rows = [0, 1, 2, 5, 10, 3, 4, 6, 7, 8, 9, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+    return rows.map((row) => makeKukuType(row, mode, multipliers));
+  }
+
+  function makeKukuMixType(id, label, point, leftCandidates, rightCandidates, difficulty, targetSeconds) {
+    return {
+      id,
+      label,
+      point,
+      example: point.split('×').map(Number),
+      difficulty,
+      targetSeconds,
+      family: 'kukuMix',
+      generate: () => makeProblem(id, choice(leftCandidates), choice(rightCandidates))
+    };
+  }
+
+  function tenths(value) {
+    return normalizeNumber(value / 10);
+  }
+
+  function hundredths(value) {
+    return normalizeNumber(value / 100);
+  }
+
+  function makeKukuType(row, mode, multipliers) {
+    const expanded = mode === 'extended';
+    const suffix = expanded ? '11_20' : '1_10';
+    const labelRange = expanded ? '11〜20' : '1〜10';
+    const point = `${row}×${expanded ? 12 : Math.min(10, Math.max(1, row === 0 ? 1 : row))}`;
+    const baseDifficulty = kukuBaseDifficulty(row);
+    const difficulty = expanded ? baseDifficulty + 0.78 : baseDifficulty;
+    const targetSeconds = expanded ? kukuExtendedTarget(row) : kukuBaseTarget(row);
+    const id = `KUKU_${row}_${suffix}`;
+    return {
+      id,
+      label: expanded ? `拡張九九 ${row}の段（${labelRange}）` : `九九 ${row}の段（${labelRange}）`,
+      point,
+      example: [row, expanded ? 12 : 10],
+      difficulty,
+      targetSeconds,
+      family: 'kuku',
+      kukuMode: mode,
+      row,
+      multipliers,
+      generate: () => makeProblem(id, row, choice(multipliers))
+    };
+  }
+
+  function kukuBaseDifficulty(row) {
+    if (row === 0 || row === 1) return 0.55;
+    if (row === 2 || row === 5 || row === 10) return 0.82;
+    if (row === 3 || row === 4) return 1.00;
+    if (row >= 6 && row <= 9) return 1.18 + (row - 6) * 0.04;
+    return 1.32 + Math.min(9, row - 11) * 0.035;
+  }
+
+  function kukuBaseTarget(row) {
+    if (row === 0 || row === 1 || row === 10) return 1.6;
+    if (row === 2 || row === 5) return 1.9;
+    if (row === 3 || row === 4) return 2.15;
+    if (row >= 6 && row <= 9) return 2.35;
+    return 3.05 + Math.min(9, row - 11) * 0.08;
+  }
+
+  function kukuExtendedTarget(row) {
+    if (row === 0 || row === 1 || row === 10) return 3.4;
+    if (row === 2 || row === 5) return 3.8;
+    if (row >= 11) return 4.9 + Math.min(9, row - 11) * 0.08;
+    return 4.25;
+  }
+
+  function isKukuType(type = currentType()) {
+    return type?.family === 'kuku';
+  }
+
+  function maxPatternIndexForType(typeIndex) {
+    const type = CURRICULUM[typeIndex] || CURRICULUM[0];
+    return isKukuType(type) ? KUKU_PATTERNS.length - 1 : PATTERNS.length - 1;
+  }
+
+  function currentPattern() {
+    const type = currentType();
+    const maxIndex = maxPatternIndexForType(state.progress.typeIndex);
+    const index = clamp(state.progress.patternIndex, 0, maxIndex);
+    return isKukuType(type) ? KUKU_PATTERNS[index] : PATTERNS[index];
+  }
+
+  function isSkipOutcome(outcome) {
+    return ['skip', 'kuku_skip_to_random', 'kuku_skip_row'].includes(outcome);
+  }
+
   function kukuProblem(leftCandidates, rightCandidates) {
     let a = choice(leftCandidates);
     let b = choice(rightCandidates);
@@ -310,14 +518,15 @@
 
   function makeProblem(typeId, left, right) {
     const type = typeId ? findType(typeId) : null;
+    const normalizedAnswer = normalizeNumber(Number(left) * Number(right));
     return {
       id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       typeId,
       typeLabel: type ? type.label : '',
-      point: `${left}×${right}`,
+      point: `${formatOperand(left)}×${formatOperand(right)}`,
       left,
       right,
-      answer: left * right,
+      answer: normalizedAnswer,
       firstAnswer: null,
       retryAnswer: null,
       firstTime: null,
@@ -326,6 +535,75 @@
       retryCorrect: false,
       finalCorrect: false
     };
+  }
+
+  function normalizeNumber(value) {
+    return Math.round((Number(value) + Number.EPSILON) * 1000000) / 1000000;
+  }
+
+  function formatOperand(value) {
+    const n = normalizeNumber(value);
+    if (Number.isInteger(n)) return String(n);
+    return String(n).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
+  }
+
+  function formatAnswer(value) {
+    return formatOperand(value);
+  }
+
+  function answerSpec(answer) {
+    const text = formatAnswer(answer);
+    const negative = text.startsWith('-');
+    const body = negative ? text.slice(1) : text;
+    const dotIndex = body.indexOf('.');
+    if (dotIndex < 0) {
+      return { text, negative, decimalPlaces: 0, integerDigits: body.length, totalDigits: body.length };
+    }
+    const integerDigits = dotIndex;
+    const decimalPlaces = body.length - dotIndex - 1;
+    return { text, negative, decimalPlaces, integerDigits, totalDigits: integerDigits + decimalPlaces };
+  }
+
+  function isDecimalAnswer(problemOrAnswer) {
+    const answer = typeof problemOrAnswer === 'object' && problemOrAnswer ? problemOrAnswer.answer : problemOrAnswer;
+    return answerSpec(answer).decimalPlaces > 0;
+  }
+
+  function activeInputProblem() {
+    if (session.phase === 'playing') return session.questions[session.currentIndex] || null;
+    if (session.phase === 'retry') return session.retryQueue[session.retryIndex] || null;
+    return null;
+  }
+
+  function answerDigitLimit(problem) {
+    if (!problem) return 10;
+    const spec = answerSpec(problem.answer);
+    if (spec.decimalPlaces > 0) return spec.totalDigits + (spec.negative ? 1 : 0);
+    return 10;
+  }
+
+  function inputToAnswerValue(input, answer) {
+    if (!input) return NaN;
+    const spec = answerSpec(answer);
+    if (spec.decimalPlaces <= 0) return Number(input);
+    const negative = input.startsWith('-');
+    const digits = input.replace(/[^0-9]/g, '');
+    if (digits.length !== spec.totalDigits) return NaN;
+    const whole = digits.slice(0, spec.integerDigits) || '0';
+    const fraction = digits.slice(spec.integerDigits);
+    return Number(`${negative ? '-' : ''}${whole}.${fraction}`);
+  }
+
+  function hasEnoughInput(input, problem) {
+    if (!problem || !input) return false;
+    const spec = answerSpec(problem.answer);
+    if (spec.decimalPlaces <= 0) return true;
+    return input.replace(/[^0-9]/g, '').length >= spec.totalDigits;
+  }
+
+  function isAnswerCorrect(input, answer) {
+    const numeric = inputToAnswerValue(input, answer);
+    return Number.isFinite(numeric) && Math.abs(normalizeNumber(numeric) - normalizeNumber(answer)) <= ANSWER_EPSILON;
   }
 
   function findType(typeId) {
@@ -357,6 +635,18 @@
     const ones = b % 10;
     const tens = Math.floor(b / 10);
     return countCarriesByDigit(a, ones) + countCarriesByDigit(a, tens);
+  }
+
+  function createProblemFromPlan(plan, usedKeys = new Set()) {
+    if (plan && typeof plan === 'object' && plan.kind === 'fixed') {
+      const type = findType(plan.typeId) || CURRICULUM[0];
+      const problem = makeProblem(type.id, plan.left, plan.right);
+      problem.typeId = type.id;
+      problem.typeLabel = type.label;
+      usedKeys.add(problemKey(problem));
+      return problem;
+    }
+    return createProblemByType(plan, usedKeys);
   }
 
   function createProblemByType(typeId, usedKeys = new Set()) {
@@ -392,6 +682,9 @@
   }
 
   function buildQuestionPlan() {
+    const type = currentType();
+    if (isKukuType(type)) return buildKukuQuestionPlan(type);
+
     const pattern = PATTERNS[state.progress.patternIndex] || PATTERNS[0];
     const current = state.progress.typeIndex;
     const recent = Math.max(0, current - 1);
@@ -406,6 +699,14 @@
 
     while (ids.length < SET_SIZE) ids.push(CURRICULUM[current].id);
     return shuffle(ids.slice(0, SET_SIZE));
+  }
+
+  function buildKukuQuestionPlan(type) {
+    const phase = KUKU_PATTERNS[clamp(state.progress.patternIndex, 0, KUKU_PATTERNS.length - 1)] || KUKU_PATTERNS[0];
+    let multipliers = type.multipliers.slice(0, SET_SIZE);
+    if (phase.order === 'desc') multipliers = multipliers.slice().reverse();
+    if (phase.order === 'random') multipliers = shuffle(multipliers);
+    return multipliers.map((right) => ({ kind: 'fixed', typeId: type.id, left: type.row, right }));
   }
 
   function pushRepeated(target, value, count) {
@@ -424,13 +725,13 @@
   function startSet(options = {}) {
     const used = new Set();
     const practiceTypeId = options.practiceTypeId || null;
-    const typeIds = practiceTypeId ? Array(SET_SIZE).fill(practiceTypeId) : buildQuestionPlan();
+    const plans = practiceTypeId ? Array(SET_SIZE).fill(practiceTypeId) : buildQuestionPlan();
     session = createEmptySession();
     session.phase = 'playing';
     session.practiceMode = Boolean(practiceTypeId);
     session.practiceTypeId = practiceTypeId;
     session.padCollapsed = state.settings.handwritingMode === 'overlay';
-    session.questions = typeIds.map((typeId) => createProblemByType(typeId, used));
+    session.questions = plans.map((plan) => createProblemFromPlan(plan, used));
     session.currentIndex = 0;
     session.input = '';
     session.startedAt = performance.now();
@@ -458,7 +759,7 @@
     setFormula(problem.point, 'problem');
     setAnswerVisible(true);
     setAnswerDisplay('');
-    els.subInfo.textContent = '答えを入力してください';
+    els.subInfo.textContent = isDecimalAnswer(problem) ? '小数点は表示済みです。各位に数字だけ入力してください' : '答えを入力してください';
     els.inlineActions.innerHTML = '';
     clearPad();
     updateOperationState();
@@ -467,8 +768,13 @@
   function submitAnswer() {
     if (session.locked) return;
     if (!['playing', 'retry'].includes(session.phase)) return;
+    const problem = activeInputProblem();
     if (!session.input) {
       setMessage('数字を入力してください', 'warning');
+      return;
+    }
+    if (!hasEnoughInput(session.input, problem)) {
+      setMessage('空いている位に数字を入れてください', 'warning');
       return;
     }
 
@@ -482,8 +788,8 @@
   function submitFirstAnswer() {
     const problem = session.questions[session.currentIndex];
     const elapsed = elapsedSeconds(session.questionStartedAt);
-    const numericAnswer = Number(session.input);
-    const correct = numericAnswer === problem.answer;
+    const numericAnswer = inputToAnswerValue(session.input, problem.answer);
+    const correct = isAnswerCorrect(session.input, problem.answer);
     problem.firstAnswer = numericAnswer;
     problem.firstTime = elapsed;
     problem.initialCorrect = correct;
@@ -574,7 +880,7 @@
     `, 'result');
     setAnswerVisible(true);
     setAnswerDisplay('');
-    els.subInfo.textContent = '答えを入力してください';
+    els.subInfo.textContent = isDecimalAnswer(problem) ? '小数点は表示済みです。各位に数字だけ入力してください' : '答えを入力してください';
     els.inlineActions.innerHTML = '';
     clearPad();
     updateOperationState();
@@ -584,8 +890,8 @@
     const problem = session.retryQueue[session.retryIndex];
     if (!problem) return;
     const elapsed = elapsedSeconds(session.questionStartedAt);
-    const numericAnswer = Number(session.input);
-    const correct = numericAnswer === problem.answer;
+    const numericAnswer = inputToAnswerValue(session.input, problem.answer);
+    const correct = isAnswerCorrect(session.input, problem.answer);
     problem.retryAnswer = numericAnswer;
     problem.retryTime = elapsed;
     problem.retryCorrect = correct;
@@ -597,7 +903,7 @@
     beep(correct ? 'ok' : 'ng');
     triggerAnswerEffect(correct);
     setMessage(correct ? `答え直し成功　+${formatRate(Math.max(0, problem.retryImpact))}` : `まだ違います　ロス ${formatRate(problem.lostPotential)}`, correct ? 'success' : 'danger');
-    els.subInfo.textContent = correct ? '減点を一部回復しました' : `正しくは ${problem.answer}`;
+    els.subInfo.textContent = correct ? '減点を一部回復しました' : `正しくは ${formatAnswer(problem.answer)}`;
 
     window.setTimeout(() => {
       session.retryIndex += 1;
@@ -627,7 +933,7 @@
       delta: after - before,
       loss: rateResult.loss,
       idealDelta: rateResult.idealDelta,
-      patternBefore: PATTERNS[state.progress.patternIndex]?.id || 'A',
+      patternBefore: currentPattern()?.id || 'A',
       typeBefore: currentType().id
     };
     session.ratingApplied = true;
@@ -695,6 +1001,8 @@
   }
 
   function judgeProgress(summary) {
+    if (isKukuType(currentType())) return judgeKukuProgress(summary);
+
     const excellent = isExcellent(summary);
     const strong = summary.firstCorrect === SET_SIZE && summary.avgFirstTime <= summary.targetTime * 1.15;
     const good = summary.finalCorrect >= 9 && summary.firstCorrect >= 8 && summary.avgFirstTime <= summary.targetTime * 1.45;
@@ -702,6 +1010,38 @@
     if (excellent) return 'skip';
     if (strong || good) return 'advance';
     if (poor) return 'regress';
+    return 'stay';
+  }
+
+  function judgeKukuProgress(summary) {
+    const type = currentType();
+    const phaseIndex = clamp(state.progress.patternIndex, 0, KUKU_PATTERNS.length - 1);
+    const times = summary.questions.map((q) => q.firstTime).filter((v) => Number.isFinite(v));
+    const maxTime = times.length ? Math.max(...times) : Infinity;
+    const strict = type.kukuMode === 'base' && type.row <= 10;
+    const limit = strict ? 4.0 : 8.0;
+    const randomLimit = strict ? 5.0 : 9.0;
+    const skipToRandom = strict ? 3.0 : 5.5;
+    const skipRow = strict ? 2.0 : 4.0;
+    const allInitialCorrect = summary.firstCorrect === SET_SIZE;
+
+    if (summary.finalCorrect <= 5 || summary.firstCorrect <= 4 || summary.avgFirstTime > randomLimit * 2.0) return 'regress';
+    if (!allInitialCorrect) return summary.finalCorrect >= 8 ? 'stay' : 'regress';
+
+    if (phaseIndex === 0) {
+      if (maxTime < skipRow) return 'kuku_skip_row';
+      if (maxTime < skipToRandom) return 'kuku_skip_to_random';
+      if (maxTime < limit) return 'advance';
+      return 'stay';
+    }
+
+    if (phaseIndex === 1) {
+      if (maxTime < skipRow) return 'kuku_skip_row';
+      if (maxTime < limit) return 'advance';
+      return 'stay';
+    }
+
+    if (maxTime < randomLimit) return 'advance';
     return 'stay';
   }
 
@@ -738,16 +1078,19 @@
 
     let delta = deltaFromPerformance(summary, achieved, possible, outcome);
 
-    if (outcome === 'skip') delta *= 1.28;
+    if (isSkipOutcome(outcome)) delta *= 1.28;
     if (options.practiceMode && delta > 0) delta *= 0.3;
 
     if (outcome === 'stay' && delta > 0) {
       delta *= Math.pow(0.5, state.progress.patternStayCount + 1);
     }
+    if (isKukuType(currentType()) && outcome === 'stay' && summary.firstCorrect === SET_SIZE) {
+      delta = Math.max(0, delta);
+    }
 
     const avgDifficulty = average(summary.questions.map((q) => findType(q.typeId)?.difficulty || 1));
     const cap = Math.max(120, 1900 * Math.pow(avgDifficulty, 1.12));
-    delta = clamp(delta, -cap * 0.32, cap * (outcome === 'skip' ? 1.42 : 1.08));
+    delta = clamp(delta, -cap * 0.32, cap * (isSkipOutcome(outcome) ? 1.42 : 1.08));
     return Math.round(delta);
   }
 
@@ -781,7 +1124,7 @@
     }
     if (summary.finalCorrect === SET_SIZE && summary.firstCorrect < SET_SIZE) delta += 0.035 * inflation;
     if (summary.finalCorrect <= 6) delta -= 0.1 * inflation;
-    if (outcome === 'skip') delta += 0.11 * inflation;
+    if (isSkipOutcome(outcome)) delta += 0.11 * inflation;
     return delta * suppression;
   }
 
@@ -815,7 +1158,12 @@
   }
 
   function updateProgress(outcome) {
-    if (outcome === 'skip') {
+    if (isKukuType(currentType())) {
+      updateKukuProgress(outcome);
+      return;
+    }
+
+    if (isSkipOutcome(outcome)) {
       skipPattern();
       state.progress.patternStayCount = 0;
       return;
@@ -836,11 +1184,52 @@
     state.progress.patternStayCount += 1;
   }
 
+  function updateKukuProgress(outcome) {
+    const phaseIndex = clamp(state.progress.patternIndex, 0, KUKU_PATTERNS.length - 1);
+    if (outcome === 'stay') {
+      state.progress.patternStayCount += 1;
+      return;
+    }
+    state.progress.patternStayCount = 0;
+
+    if (outcome === 'regress') {
+      if (phaseIndex > 0) {
+        state.progress.patternIndex = phaseIndex - 1;
+        return;
+      }
+      if (state.progress.typeIndex > 0) {
+        state.progress.typeIndex -= 1;
+        state.progress.patternIndex = maxPatternIndexForType(state.progress.typeIndex);
+      }
+      return;
+    }
+
+    if (outcome === 'kuku_skip_to_random') {
+      state.progress.patternIndex = 2;
+      return;
+    }
+
+    if (outcome === 'kuku_skip_row' || (outcome === 'advance' && phaseIndex >= 2) || (outcome === 'skip' && phaseIndex >= 1)) {
+      advanceTypeFromKuku();
+      return;
+    }
+
+    if (outcome === 'advance' || outcome === 'skip') {
+      state.progress.patternIndex = Math.min(2, phaseIndex + 1);
+      return;
+    }
+  }
+
+  function advanceTypeFromKuku() {
+    state.progress.typeIndex = Math.min(CURRICULUM.length - 1, state.progress.typeIndex + 1);
+    state.progress.patternIndex = 0;
+  }
+
   function advancePattern() {
     const p = state.progress.patternIndex;
     if (p === 2) {
       state.progress.typeIndex = Math.min(CURRICULUM.length - 1, state.progress.typeIndex + 1);
-      state.progress.patternIndex = 3;
+      state.progress.patternIndex = isKukuType(CURRICULUM[state.progress.typeIndex]) ? 0 : 3;
       return;
     }
     if (p === 5) {
@@ -862,7 +1251,7 @@
     }
     if (p === 2) {
       state.progress.typeIndex = Math.min(CURRICULUM.length - 1, state.progress.typeIndex + 1);
-      state.progress.patternIndex = 3;
+      state.progress.patternIndex = isKukuType(CURRICULUM[state.progress.typeIndex]) ? 0 : 3;
       return;
     }
     if (p === 3) {
@@ -880,7 +1269,7 @@
     const p = state.progress.patternIndex;
     if (p === 3 && state.progress.typeIndex > 0) {
       state.progress.typeIndex -= 1;
-      state.progress.patternIndex = 2;
+      state.progress.patternIndex = maxPatternIndexForType(state.progress.typeIndex);
       return;
     }
     state.progress.patternIndex = Math.max(0, p - 1);
@@ -888,7 +1277,7 @@
 
   function updateLearnedTypes(summary, outcome) {
     const typeId = session.result?.typeBefore || currentType().id;
-    const pattern = session.result?.patternBefore || PATTERNS[state.progress.patternIndex]?.id || 'A';
+    const pattern = session.result?.patternBefore || currentPattern()?.id || 'A';
     if (shouldUnlockLearnedType(summary, outcome, typeId, pattern) && !state.learnedTypes.includes(typeId)) {
       state.learnedTypes.push(typeId);
     }
@@ -903,6 +1292,12 @@
     const allFinalCorrect = questions.every((q) => q.finalCorrect);
     const avgTypeTime = average(questions.map((q) => q.firstTime).filter((v) => Number.isFinite(v))) || summary.avgFirstTime;
 
+    if (isKukuType(type)) {
+      const maxTime = Math.max(...questions.map((q) => q.firstTime).filter((v) => Number.isFinite(v)));
+      const limit = (type.kukuMode === 'extended' || type.row > 10) ? 9.0 : 5.0;
+      return allInitialCorrect && maxTime < limit && (pattern === 'A-3' || outcome === 'kuku_skip_row');
+    }
+
     // 基本確認で安定していれば、その時点で反復を解放する。
     if (pattern === 'A') {
       return allInitialCorrect && avgTypeTime <= type.targetSeconds * 1.20;
@@ -910,7 +1305,7 @@
 
     // 次の類型へ進めるだけでなく、初回正解の安定も見て反復対象にする。
     // 高速だがミスが残る場合は、解放を少し遅らせる。
-    if (pattern === 'C' && ['advance', 'skip'].includes(outcome)) {
+    if (pattern === 'C' && (isSkipOutcome(outcome) || outcome === 'advance')) {
       const typeInitialCorrect = questions.filter((q) => q.initialCorrect).length;
       const typeInitialRate = typeInitialCorrect / Math.max(1, questions.length);
       return allFinalCorrect && summary.finalCorrect >= 9 && summary.firstCorrect >= 9 && typeInitialRate >= 0.9 && avgTypeTime <= type.targetSeconds * 1.55;
@@ -947,7 +1342,7 @@
   }
 
   function resultMessage(outcome) {
-    if (outcome === 'skip') return '十分に定着しています';
+    if (isSkipOutcome(outcome)) return '十分に定着しています';
     if (outcome === 'advance') return '安定して解けています';
     if (outcome === 'regress') return '復習を強めます';
     if (outcome === 'practice') return '学習済みを確認しました';
@@ -955,7 +1350,7 @@
   }
 
   function resultSubInfo(outcome) {
-    if (outcome === 'skip') return '解き方が安定しているため、次の確認へ進みます';
+    if (isSkipOutcome(outcome)) return '解き方が安定しているため、次の確認へ進みます';
     if (outcome === 'advance') return '次の確認へ進みました';
     if (outcome === 'regress') return '少し前の内容も混ぜて確認します';
     if (outcome === 'practice') return '学習済み反復のため、レート加算は割引されています';
@@ -1018,12 +1413,35 @@
     els.answerLine.classList.toggle('hidden', !visible);
     if (!visible) {
       session.input = '';
+      els.answerDisplay.classList.remove('decimal-answer');
       els.answerDisplay.textContent = '\u00a0';
     }
   }
 
+  function renderAnswerSlots(value, problem) {
+    if (!problem || !isDecimalAnswer(problem)) return value ? escapeHtml(value) : '\u00a0';
+    const spec = answerSpec(problem.answer);
+    const rawDigits = String(value || '').replace(/[^0-9]/g, '').slice(0, spec.totalDigits);
+    const pieces = [];
+    if (spec.negative) pieces.push('<span class="answer-sign">-</span>');
+    for (let i = 0; i < spec.integerDigits; i++) {
+      const digit = rawDigits[i] || '';
+      pieces.push(`<span class="answer-slot${digit ? ' filled' : ''}">${digit || '&nbsp;'}</span>`);
+    }
+    pieces.push('<span class="answer-dot">.</span>');
+    for (let i = 0; i < spec.decimalPlaces; i++) {
+      const index = spec.integerDigits + i;
+      const digit = rawDigits[index] || '';
+      pieces.push(`<span class="answer-slot${digit ? ' filled' : ''}">${digit || '&nbsp;'}</span>`);
+    }
+    return pieces.join('');
+  }
+
   function setAnswerDisplay(value) {
-    els.answerDisplay.textContent = value || '\u00a0';
+    const problem = activeInputProblem();
+    const decimal = Boolean(problem && isDecimalAnswer(problem));
+    els.answerDisplay.classList.toggle('decimal-answer', decimal);
+    els.answerDisplay.innerHTML = renderAnswerSlots(value, problem);
     if (['playing', 'retry'].includes(session.phase) && !session.locked) {
       els.answerDisplay.classList.remove('pulse');
       void els.answerDisplay.offsetWidth;
@@ -1055,10 +1473,16 @@
     if (session.locked) return;
 
     if (/^\d$/.test(action)) {
-      if (session.input.length >= 8) return;
+      const problem = activeInputProblem();
+      if (session.input.length >= answerDigitLimit(problem)) return;
       session.input += action;
       setAnswerDisplay(session.input);
       setMessage('', '');
+      return;
+    }
+
+    if (action === '.') {
+      // 小数点は答え欄にあらかじめ表示するため、入力としては受け付けない。
       return;
     }
 
@@ -1088,6 +1512,8 @@
       if (key.blank) {
         const spacer = document.createElement('div');
         spacer.className = `key-spacer ${key.className || ''}`;
+        if (key.row) spacer.style.gridRow = String(key.row);
+        if (key.col) spacer.style.gridColumn = `${key.col} / span ${key.span || 1}`;
         els.keypad.appendChild(spacer);
         continue;
       }
@@ -1110,11 +1536,11 @@
     }
 
     if (layout === 'normal') {
-      els.keyHint.textContent = 'デフォルト　数字キー：入力　Enter / Space：決定　Backspace：1文字削除';
+      els.keyHint.textContent = 'デフォルト　数字：入力　Enter / Space：決定　Backspace：1文字削除';
     } else if (layout === 'topLeft') {
       els.keyHint.textContent = '疑似テンキー左　1 2 3 / Q W E / A S D F / Z　Space：決定';
     } else {
-      els.keyHint.textContent = '疑似テンキー右　7 8 9 0 / U I O / J K L ;　Backspace：1文字削除';
+      els.keyHint.textContent = '疑似テンキー右　7 8 9 0 / U I O / J K L / ;：決定';
     }
   }
 
@@ -1124,7 +1550,7 @@
         digitKey('1', '', 1, 3, 2, '1'), digitKey('2', '', 1, 5, 2, '2'), digitKey('3', '', 1, 7, 2, '3'),
         digitKey('4', '', 2, 2, 2, 'Q'), digitKey('5', '', 2, 4, 2, 'W'), digitKey('6', '', 2, 6, 2, 'E'),
         digitKey('7', '', 3, 1, 2, 'A'), digitKey('8', '', 3, 3, 2, 'S'), digitKey('9', '', 3, 5, 2, 'D'), digitKey('0', '', 3, 7, 2, 'F'),
-        controlKey('←', 'backspace', '', 4, 1, 2, 'Z'), okKey('Space', 'space-key', 4, 4, 5, 'Space')
+        controlKey('←', 'backspace', '', 4, 1, 2, 'Z'), okKey('Space', 'space-key', 4, 3, 6, 'Space')
       ];
     }
     if (layout === 'pseudo') {
@@ -1135,10 +1561,11 @@
       ];
     }
     return [
-      digitKey('7'), digitKey('8'), digitKey('9'),
-      digitKey('4'), digitKey('5'), digitKey('6'),
-      digitKey('1'), digitKey('2'), digitKey('3'),
-      controlKey('←', 'backspace'), digitKey('0'), okKey('OK')
+      digitKey('7', '', 1, 1, 1), digitKey('8', '', 1, 2, 1), digitKey('9', '', 1, 3, 1),
+      digitKey('4', '', 2, 1, 1), digitKey('5', '', 2, 2, 1), digitKey('6', '', 2, 3, 1),
+      digitKey('1', '', 3, 1, 1), digitKey('2', '', 3, 2, 1), digitKey('3', '', 3, 3, 1),
+      controlKey('←', 'backspace', '', 4, 1, 1), digitKey('0', '', 4, 2, 1), { blank: true, row: 4, col: 3, span: 1 },
+      okKey('OK', '', 5, 1, 3)
     ];
   }
 
@@ -1199,17 +1626,48 @@
 
     els.pauseButton.classList.toggle('hidden', !(name === 'game' && session.phase === 'playing'));
     els.homeButton.classList.toggle('hidden', name === 'home');
-    updateTopInfo();
+    updateTopInfo({ animateHomeRate: name === 'home' });
     updateOperationState();
   }
 
-  function updateTopInfo() {
+  function updateTopInfo(options = {}) {
     const rate = formatRate(state.player.rating);
+    const highestRate = Math.max(state.player.highestRating || 0, state.player.rating || 0);
     els.statusText.textContent = `レート：${rate}`;
-    els.homeRate.textContent = rate;
+    if (options.animateHomeRate) {
+      animateHomeRate(highestRate);
+    } else if (!els.homeScreen.classList.contains('active')) {
+      setHomeRate(highestRate);
+    }
     els.homePoint.textContent = currentType().point;
-    els.homeDetail.textContent = currentType().label;
-    els.learnedSummary.textContent = learnedSummaryText();
+    els.homeDetail.textContent = isKukuType(currentType()) ? `${currentType().label}：${currentPattern().label}` : currentType().label;
+  }
+
+  function setHomeRate(value) {
+    els.homeRate.textContent = formatRate(value);
+  }
+
+  function animateHomeRate(target) {
+    if (homeRateAnimationId) cancelAnimationFrame(homeRateAnimationId);
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      setHomeRate(target);
+      return;
+    }
+    const started = performance.now();
+    const duration = 2000;
+    const final = Math.max(0, Math.round(target || 0));
+    const tick = (now) => {
+      const t = clamp((now - started) / duration, 0, 1);
+      const eased = 1 - Math.pow(1 - t, 4);
+      setHomeRate(Math.round(final * eased));
+      if (t < 1) {
+        homeRateAnimationId = requestAnimationFrame(tick);
+      } else {
+        homeRateAnimationId = null;
+      }
+    };
+    setHomeRate(0);
+    homeRateAnimationId = requestAnimationFrame(tick);
   }
 
   function openSettings() {
@@ -1233,7 +1691,6 @@
     state.settings.sound = getRadioValue('sound') === 'on';
     saveState();
     applySettings();
-    goHome();
   }
 
   function setRadioValue(name, value) {
@@ -1476,7 +1933,9 @@
     els.pauseButton.addEventListener('click', pauseGame);
     els.resumeButton.addEventListener('click', resumeGame);
     els.pauseHomeButton.addEventListener('click', goHome);
-    els.saveSettingsButton.addEventListener('click', saveSettingsFromForm);
+    document.querySelectorAll('#settingsScreen input[type="radio"]').forEach((input) => {
+      input.addEventListener('change', saveSettingsFromForm);
+    });
     els.resetDataButton.addEventListener('click', resetData);
     els.clearPadButton.addEventListener('click', clearPad);
     els.togglePadButton.addEventListener('click', () => togglePad());
@@ -1502,6 +1961,7 @@
       goHome();
     },
     curriculum: CURRICULUM.map(({ id, label, point, difficulty, targetSeconds }) => ({ id, label, point, difficulty, targetSeconds })),
-    patterns: PATTERNS
+    patterns: PATTERNS,
+    kukuPatterns: KUKU_PATTERNS
   };
 })();

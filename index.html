@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#10151f">
+  <meta name="theme-color" content="#0e1d1b">
   <meta name="description" content="MulRate - かけ算の計算力を鍛えるレート制トレーニングアプリ">
-  <title>MulRate</title>
+  <title>MulRate v1.0.0 beta.9</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -28,7 +28,7 @@
             <p class="eyebrow">かけ算トレーニング</p>
             <h1 id="homeTitle">MulRate</h1>
             <div class="home-rate-block">
-              <span>レート</span>
+              <span>最高レート</span>
               <strong id="homeRate">300</strong>
             </div>
             <div class="home-subgrid">
@@ -40,10 +40,6 @@
                 <span>出題傾向</span>
                 <strong id="homeDetail">九九 5・2の段</strong>
               </div>
-            </div>
-            <div class="learned-summary">
-              <span>学習済み</span>
-              <strong id="learnedSummary">なし</strong>
             </div>
             <div class="home-actions">
               <button id="startButton" class="primary-button" type="button">スタート</button>
@@ -139,9 +135,9 @@
               <label><input type="radio" name="sound" value="off"> OFF</label>
             </fieldset>
 
-            <div class="settings-actions">
-              <button id="saveSettingsButton" class="primary-button" type="button">保存して戻る</button>
-              <button id="resetDataButton" class="danger-button" type="button">学習データをリセット</button>
+            <p class="settings-note">設定は選んだ時点で保存されます。</p>
+            <div class="settings-actions subtle-actions">
+              <button id="resetDataButton" class="danger-button subtle-danger" type="button">学習データをリセット</button>
             </div>
           </div>
         </section>
