@@ -163,8 +163,16 @@
       generate: () => generateByCondition('M3D1_ZERO_INSIDE', () => [randInt(101, 909), randInt(2, 9)], ([a]) => String(a).includes('0') && a % 100 !== 0)
     },
     {
-      id: 'M2D2_TEN', label: '2けた×2けた 10台をかける', point: '23×12', example: [23, 12], difficulty: 4.05, targetSeconds: 11.5,
-      generate: () => makeProblem('M2D2_TEN', randInt(12, 99), randInt(10, 19))
+      id: 'M2D2_X10', label: '2けた×10', point: '23×10', example: [23, 10], difficulty: 3.55, targetSeconds: 8.8,
+      generate: () => makeProblem('M2D2_X10', randInt(12, 99), 10)
+    },
+    {
+      id: 'M2D2_TENS', label: '2けた×何十', point: '23×20', example: [23, 20], difficulty: 3.75, targetSeconds: 9.8,
+      generate: () => makeProblem('M2D2_TENS', randInt(12, 99), randInt(2, 9) * 10)
+    },
+    {
+      id: 'M2D2_TEN', label: '2けた×10台', point: '23×12', example: [23, 12], difficulty: 4.10, targetSeconds: 12.0,
+      generate: () => makeProblem('M2D2_TEN', randInt(12, 99), randInt(11, 19))
     },
     {
       id: 'M2D2_NO_CARRY', label: '2けた×2けた 繰り上がり少なめ', point: '21×13', example: [21, 13], difficulty: 4.35, targetSeconds: 12.4,
@@ -719,13 +727,14 @@
       return sum + 1.25 * (type?.difficulty || 1);
     }, 0);
 
-    const achieved = summary.questions.reduce((sum, q) => {
+    const achievedRaw = summary.questions.reduce((sum, q) => {
       const type = findType(q.typeId);
       const resultFactor = q.initialCorrect ? 1 : q.retryCorrect ? 0.45 : 0;
       const time = q.firstTime || type?.targetSeconds || 5;
       const speedFactor = getSpeedFactor(time, type?.targetSeconds || 5);
       return sum + resultFactor * speedFactor * (type?.difficulty || 1);
     }, 0);
+    const achieved = achievedRaw * getInitialAccuracyFactor(summary);
 
     let delta = deltaFromPerformance(summary, achieved, possible, outcome);
 
@@ -737,8 +746,8 @@
     }
 
     const avgDifficulty = average(summary.questions.map((q) => findType(q.typeId)?.difficulty || 1));
-    const cap = Math.max(80, 1200 * Math.pow(avgDifficulty, 1.1));
-    delta = clamp(delta, -cap * 0.45, cap * (outcome === 'skip' ? 1.35 : 1));
+    const cap = Math.max(120, 1900 * Math.pow(avgDifficulty, 1.12));
+    delta = clamp(delta, -cap * 0.32, cap * (outcome === 'skip' ? 1.42 : 1.08));
     return Math.round(delta);
   }
 
@@ -750,23 +759,39 @@
     let delta = deltaFromPerformance(summary, possible, possible, 'skip');
     if (options.practiceMode && delta > 0) delta *= 0.3;
     const avgDifficulty = average(summary.questions.map((q) => findType(q.typeId)?.difficulty || 1));
-    const cap = Math.max(80, 1200 * Math.pow(avgDifficulty, 1.1));
-    return Math.round(clamp(delta, -cap * 0.45, cap * 1.35));
+    const cap = Math.max(120, 1900 * Math.pow(avgDifficulty, 1.12));
+    return Math.round(clamp(delta, -cap * 0.32, cap * 1.42));
   }
 
   function deltaFromPerformance(summary, achieved, possible, outcome) {
     const performanceRatio = possible ? achieved / possible : 0;
     const avgDifficulty = average(summary.questions.map((q) => findType(q.typeId)?.difficulty || 1));
-    const expectedRatio = clamp(0.27 + Math.log10(summary.ratingBefore + 100) / 22, 0.30, 0.78);
-    const inflation = 260 * Math.pow(avgDifficulty, 1.35) * (1 + Math.log2(avgDifficulty + 1));
-    const suppression = 1 / (1 + Math.log10(summary.ratingBefore + 10) / 5);
+    const expectedRatio = clamp(0.25 + Math.log10(summary.ratingBefore + 100) / 24, 0.28, 0.76);
+    const inflation = 360 * Math.pow(avgDifficulty, 1.38) * (1 + Math.log2(avgDifficulty + 1));
+    const suppression = 1 / (1 + Math.log10(summary.ratingBefore + 10) / 6.2);
 
     let delta = (performanceRatio - expectedRatio) * inflation;
-    if (summary.firstCorrect === SET_SIZE && summary.avgFirstTime <= summary.targetTime * 1.15) delta += 0.12 * inflation;
-    if (summary.finalCorrect === SET_SIZE && summary.firstCorrect < SET_SIZE) delta += 0.04 * inflation;
-    if (summary.finalCorrect <= 6) delta -= 0.08 * inflation;
-    if (outcome === 'skip') delta += 0.1 * inflation;
+    if (summary.firstCorrect === SET_SIZE) {
+      delta += 0.10 * inflation;
+      if (summary.avgFirstTime <= summary.targetTime * 1.15) delta += 0.11 * inflation;
+    } else if (summary.firstCorrect >= 9 && summary.finalCorrect === SET_SIZE) {
+      delta += 0.06 * inflation;
+    } else if (summary.firstCorrect <= 8) {
+      delta -= (9 - summary.firstCorrect) * 0.035 * inflation;
+    }
+    if (summary.finalCorrect === SET_SIZE && summary.firstCorrect < SET_SIZE) delta += 0.035 * inflation;
+    if (summary.finalCorrect <= 6) delta -= 0.1 * inflation;
+    if (outcome === 'skip') delta += 0.11 * inflation;
     return delta * suppression;
+  }
+
+  function getInitialAccuracyFactor(summary) {
+    const rate = summary.firstCorrect / SET_SIZE;
+    if (summary.firstCorrect === SET_SIZE) return 1;
+    if (summary.firstCorrect >= 9) return 0.90;
+    if (summary.firstCorrect >= 8) return 0.74;
+    if (summary.firstCorrect >= 7) return 0.60;
+    return clamp(0.40 + rate * 0.22, 0.40, 0.56);
   }
 
   function estimateQuestionPotential(problem) {
@@ -883,9 +908,12 @@
       return allInitialCorrect && avgTypeTime <= type.targetSeconds * 1.20;
     }
 
-    // 次の類型へ進めるだけの成績なら、直前の中心類型も反復対象にする。
+    // 次の類型へ進めるだけでなく、初回正解の安定も見て反復対象にする。
+    // 高速だがミスが残る場合は、解放を少し遅らせる。
     if (pattern === 'C' && ['advance', 'skip'].includes(outcome)) {
-      return allFinalCorrect && summary.finalCorrect >= 9 && summary.firstCorrect >= 8;
+      const typeInitialCorrect = questions.filter((q) => q.initialCorrect).length;
+      const typeInitialRate = typeInitialCorrect / Math.max(1, questions.length);
+      return allFinalCorrect && summary.finalCorrect >= 9 && summary.firstCorrect >= 9 && typeInitialRate >= 0.9 && avgTypeTime <= type.targetSeconds * 1.55;
     }
 
     return false;

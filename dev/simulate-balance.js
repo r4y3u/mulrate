@@ -28,7 +28,9 @@ const CURRICULUM = [
   { id: 'M3D1_C_BASIC', label: '3けた×1けた 繰り上がりあり', difficulty: 3.18, targetSeconds: 8.0 },
   { id: 'M3D1_C_CHAIN', label: '3けた×1けた 連続した繰り上がり', difficulty: 3.55, targetSeconds: 8.8 },
   { id: 'M3D1_ZERO_INSIDE', label: '3けた×1けた 被乗数に0を含む', difficulty: 3.08, targetSeconds: 8.2 },
-  { id: 'M2D2_TEN', label: '2けた×2けた 10台をかける', difficulty: 4.05, targetSeconds: 11.5 },
+  { id: 'M2D2_X10', label: '2けた×10', difficulty: 3.55, targetSeconds: 8.8 },
+  { id: 'M2D2_TENS', label: '2けた×何十', difficulty: 3.75, targetSeconds: 9.8 },
+  { id: 'M2D2_TEN', label: '2けた×10台', difficulty: 4.10, targetSeconds: 12.0 },
   { id: 'M2D2_NO_CARRY', label: '2けた×2けた 繰り上がり少なめ', difficulty: 4.35, targetSeconds: 12.4 },
   { id: 'M2D2_CARRY', label: '2けた×2けた 繰り上がりあり', difficulty: 4.78, targetSeconds: 13.8 },
   { id: 'M2D2_ZERO_PRODUCT', label: '2けた×2けた 0を含む計算', difficulty: 4.25, targetSeconds: 12.6 },
@@ -36,11 +38,13 @@ const CURRICULUM = [
 ];
 
 const LEARNERS = [
-  { name: '初学者', accuracy: 0.70, speed: 1.55, learning: 0.018, carelessness: 0.03 },
-  { name: '標準', accuracy: 0.82, speed: 1.18, learning: 0.026, carelessness: 0.025 },
-  { name: '得意', accuracy: 0.92, speed: 0.88, learning: 0.033, carelessness: 0.018 },
-  { name: 'ケアレス型', accuracy: 0.86, speed: 0.78, learning: 0.024, carelessness: 0.085 },
-  { name: '慎重型', accuracy: 0.91, speed: 1.42, learning: 0.022, carelessness: 0.012 }
+  { name: 'A 初学者・ゆっくり型', accuracy: 0.70, speed: 1.58, learning: 0.018, carelessness: 0.030 },
+  { name: 'B 標準型', accuracy: 0.83, speed: 1.16, learning: 0.026, carelessness: 0.025 },
+  { name: 'C 九九先行・筆算で失速', accuracy: 0.88, speed: 0.96, learning: 0.018, carelessness: 0.025, writtenPenalty: 0.08 },
+  { name: 'D 高速・ケアレス型', accuracy: 0.90, speed: 0.72, learning: 0.025, carelessness: 0.115 },
+  { name: 'E 慎重・高正答型', accuracy: 0.965, speed: 1.34, learning: 0.024, carelessness: 0.010 },
+  { name: 'F 得意・高速安定型', accuracy: 0.955, speed: 0.78, learning: 0.034, carelessness: 0.010 },
+  { name: 'G 不安定・集中波型', accuracy: 0.84, speed: 1.03, learning: 0.027, carelessness: 0.040, wave: true }
 ];
 
 function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
@@ -83,26 +87,43 @@ function judge(summary) {
   return 'stay';
 }
 
+function initialAccuracyFactor(summary) {
+  const rate = summary.firstCorrect / SET_SIZE;
+  if (summary.firstCorrect === SET_SIZE) return 1;
+  if (summary.firstCorrect >= 9) return 0.90;
+  if (summary.firstCorrect >= 8) return 0.74;
+  if (summary.firstCorrect >= 7) return 0.60;
+  return clamp(0.40 + rate * 0.22, 0.40, 0.56);
+}
+
 function delta(summary, state, outcome) {
   const possible = summary.items.reduce((sum, item) => sum + 1.25 * item.type.difficulty, 0);
-  const achieved = summary.items.reduce((sum, item) => {
+  const achievedRaw = summary.items.reduce((sum, item) => {
     const result = item.correct ? 1 : item.retryCorrect ? 0.45 : 0;
     return sum + result * speedFactor(item.time, item.type.targetSeconds) * item.type.difficulty;
   }, 0);
+  const achieved = achievedRaw * initialAccuracyFactor(summary);
   const ratio = possible ? achieved / possible : 0;
   const avgDifficulty = avg(summary.items.map((i) => i.type.difficulty));
-  const expected = clamp(0.27 + Math.log10(state.rating + 100) / 22, 0.30, 0.78);
-  const inflation = 260 * Math.pow(avgDifficulty, 1.35) * (1 + Math.log2(avgDifficulty + 1));
-  const suppression = 1 / (1 + Math.log10(state.rating + 10) / 5);
+  const expected = clamp(0.25 + Math.log10(state.rating + 100) / 24, 0.28, 0.76);
+  const inflation = 360 * Math.pow(avgDifficulty, 1.38) * (1 + Math.log2(avgDifficulty + 1));
+  const suppression = 1 / (1 + Math.log10(state.rating + 10) / 6.2);
   let d = (ratio - expected) * inflation;
-  if (summary.firstCorrect === SET_SIZE && summary.avgTime <= summary.targetTime * 1.15) d += 0.12 * inflation;
-  if (summary.finalCorrect === SET_SIZE && summary.firstCorrect < SET_SIZE) d += 0.04 * inflation;
-  if (summary.finalCorrect <= 6) d -= 0.08 * inflation;
-  if (outcome === 'skip') d += 0.1 * inflation;
+  if (summary.firstCorrect === SET_SIZE) {
+    d += 0.10 * inflation;
+    if (summary.avgTime <= summary.targetTime * 1.15) d += 0.11 * inflation;
+  } else if (summary.firstCorrect >= 9 && summary.finalCorrect === SET_SIZE) {
+    d += 0.06 * inflation;
+  } else if (summary.firstCorrect <= 8) {
+    d -= (9 - summary.firstCorrect) * 0.035 * inflation;
+  }
+  if (summary.finalCorrect === SET_SIZE && summary.firstCorrect < SET_SIZE) d += 0.035 * inflation;
+  if (summary.finalCorrect <= 6) d -= 0.10 * inflation;
+  if (outcome === 'skip') d += 0.11 * inflation;
   d *= suppression;
   if (outcome === 'stay' && d > 0) d *= Math.pow(0.5, state.patternStayCount + 1);
-  const cap = Math.max(80, 1200 * Math.pow(avgDifficulty, 1.1));
-  return Math.round(clamp(d, -cap * 0.45, cap * (outcome === 'skip' ? 1.35 : 1)));
+  const cap = Math.max(120, 1900 * Math.pow(avgDifficulty, 1.12));
+  return Math.round(clamp(d, -cap * 0.32, cap * (outcome === 'skip' ? 1.42 : 1.08)));
 }
 
 function advance(state, outcome) {
@@ -132,8 +153,10 @@ function runLearner(model, minutes) {
     const typeIndexes = planTypes(state.typeIndex, state.patternIndex);
     const items = typeIndexes.map((idx) => {
       const type = CURRICULUM[idx];
+      const writtenPenalty = model.writtenPenalty && type.difficulty >= 3.5 ? model.writtenPenalty : 0;
+      const wavePenalty = model.wave ? (Math.sin((sets + 1) * 0.72) * 0.055) : 0;
       const difficultyPenalty = (type.difficulty - 1) * 0.065;
-      const pCorrect = clamp(model.accuracy + state.skill - difficultyPenalty - model.carelessness, 0.18, 0.995);
+      const pCorrect = clamp(model.accuracy + state.skill * 0.75 - difficultyPenalty - model.carelessness - writtenPenalty + wavePenalty, 0.18, 0.995);
       const correct = Math.random() < pCorrect;
       const retryCorrect = !correct && Math.random() < clamp(pCorrect + 0.12, 0, 0.98);
       const timeNoise = 0.82 + Math.random() * 0.42;
@@ -150,20 +173,30 @@ function runLearner(model, minutes) {
     const outcome = judge(summary);
     if (outcome === 'skip') state.skips += 1;
     if (outcome === 'stay') state.stays += 1;
-    if (PATTERNS[state.patternIndex].id === 'A' && outcome === 'skip') state.learned.add(CURRICULUM[state.typeIndex].id);
+    const patternId = PATTERNS[state.patternIndex].id;
+    const centerType = CURRICULUM[state.typeIndex];
+    const typeQuestions = items.filter((i) => i.type === centerType);
+    const typeInitialRate = typeQuestions.filter((i) => i.correct).length / Math.max(1, typeQuestions.length);
+    const typeAllFinal = typeQuestions.every((i) => i.correct || i.retryCorrect);
+    const typeAvgTime = avg(typeQuestions.map((i) => i.time));
+    if (patternId === 'A' && typeQuestions.every((i) => i.correct) && typeAvgTime <= centerType.targetSeconds * 1.20) {
+      state.learned.add(centerType.id);
+    } else if (patternId === 'C' && ['advance', 'skip'].includes(outcome) && typeAllFinal && summary.finalCorrect >= 9 && summary.firstCorrect >= 9 && typeInitialRate >= 0.9 && typeAvgTime <= centerType.targetSeconds * 1.55) {
+      state.learned.add(centerType.id);
+    }
     state.rating = clamp(state.rating + delta(summary, state, outcome), 0, MAX_RATE);
     advance(state, outcome);
-    state.skill = clamp(state.skill + model.learning * (0.5 + summary.finalCorrect / SET_SIZE), 0, 0.55);
+    state.skill = clamp(state.skill + model.learning * (0.5 + summary.finalCorrect / SET_SIZE), 0, 0.35);
     elapsedMinutes += avg(items.map((i) => i.time)) * SET_SIZE / 60 + 0.45;
     sets += 1;
   }
   return { model: model.name, minutes, sets, rating: state.rating, type: CURRICULUM[state.typeIndex].label, pattern: PATTERNS[state.patternIndex].id, skips: state.skips, stays: state.stays, learned: state.learned.size };
 }
 
-for (const minutes of [30, 60, 300, 600]) {
+for (const minutes of [30, 60, 300, 600, 1800, 6000]) {
   console.log(`\n=== ${minutes}分 ===`);
   for (const learner of LEARNERS) {
-    const runs = Array.from({ length: 40 }, () => runLearner(learner, minutes));
+    const runs = Array.from({ length: minutes >= 1800 ? 80 : 120 }, () => runLearner(learner, minutes));
     const rating = Math.round(avg(runs.map((r) => r.rating)));
     const sets = Math.round(avg(runs.map((r) => r.sets)));
     const skips = Math.round(avg(runs.map((r) => r.skips)));
