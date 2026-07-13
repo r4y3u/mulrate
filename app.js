@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const STORAGE_KEY = 'mulrate_v1_0_0_beta2_state';
+  const STORAGE_KEY = 'mulrate_v1_0_0_beta12_state';
   const MAX_RATE = 99999999;
   const SET_SIZE = 10;
   const ANSWER_EPSILON = 1e-9;
@@ -91,96 +91,83 @@
   };
 
   const CURRICULUM = [
-    // 乗法の基礎：0〜20の段を、各段 A-1/A-2/A-3 で確認する。
-    ...buildKukuTypes('base', range(1, 10)),
-
-    // 位取りの導入。2けた×1けたに入る前に、10倍と何十×1けたを独立して扱う。
+    // 1〜16: 通常九九と、1けたをかける筆算への最小限の準備。
+    {
+      id: 'MUL_MEANING_GROUPS', label: 'かけ算の意味', point: '3×4', example: [3, 4], difficulty: 0.48, targetSeconds: 3.0,
+      generate: () => makeProblem('MUL_MEANING_GROUPS', randInt(2, 5), randInt(2, 5))
+    },
+    ...buildKukuTypes('base', [5, 2, 3, 4, 6, 7, 8, 9, 1], range(1, 10)),
+    makeKukuType(0, 'base', range(1, 10)),
+    makeKukuType(10, 'base', range(1, 10)),
+    makeKukuMixType('KUKU_MIX_1_9', '九九 1〜9混合', '7×8', range(1, 9), range(1, 10), 1.42, 3.2),
+    makeKukuMixType('KUKU_MIX_0_10', '0〜10の段 混合', '10×6', range(0, 10), range(1, 10), 1.55, 3.6),
     {
       id: 'PLACE_10X_100X', label: '10倍・100倍', point: '23×10', example: [23, 10], difficulty: 1.55, targetSeconds: 4.4,
-      generate: () => {
-        const a = randInt(2, 99);
-        const b = Math.random() < 0.72 ? 10 : 100;
-        return makeProblem('PLACE_10X_100X', a, b);
-      }
+      generate: () => makeProblem('PLACE_10X_100X', randInt(2, 99), Math.random() < 0.72 ? 10 : 100)
     },
     {
       id: 'TENS_X_1D', label: '何十×1けた', point: '20×3', example: [20, 3], difficulty: 1.72, targetSeconds: 4.5,
       generate: () => makeProblem('TENS_X_1D', randInt(2, 9) * 10, randInt(2, 9))
     },
 
-    // M2D1_NC 直前の総合導入。11〜20の段と0〜20混合は、2けた×1けた導入と同等難度として扱う。
-    makeKukuMixType('KUKU_MIX_11_20', '11〜20の段 混合', '16×7', range(11, 20), range(1, 10), 1.86, 4.8),
-    makeKukuMixType('KUKU_MIX_0_20', '0〜20の段 混合', '18×9', range(0, 20), range(1, 10), 1.94, 5.0),
-
+    // 17〜21: 2けた×1けた。繰り上がりと積の桁数を同時に見る。
     {
-      id: 'M2D1_NC', label: '2けた×1けた 繰り上がりなし', point: '21×3', example: [21, 3], difficulty: 1.95, targetSeconds: 4.9,
-      generate: () => generateByCondition('M2D1_NC', () => [randInt(11, 99), randInt(2, 9)], ([a, b]) => countCarriesByDigit(a, b) === 0 && a % 10 !== 0)
+      id: 'M2D1_NC_P2', label: '2けた×1けた 繰り上がりなし・積2けた', point: '21×3', example: [21, 3], difficulty: 1.95, targetSeconds: 4.9,
+      generate: () => generateByCondition('M2D1_NC_P2', () => [randInt(11, 49), randInt(2, 4)], ([a, b]) => countCarriesByDigit(a, b) === 0 && a * b < 100 && a % 10 !== 0)
     },
     {
-      id: 'M2D1_C_ONES', label: '2けた×1けた 一の位で繰り上がり', point: '27×3', example: [27, 3], difficulty: 2.18, targetSeconds: 5.4,
-      generate: () => generateByCondition('M2D1_C_ONES', () => [randInt(11, 99), randInt(2, 9)], ([a, b]) => {
-        const ones = a % 10;
-        const tens = Math.floor(a / 10);
-        const carry = Math.floor((ones * b) / 10);
-        return ones !== 0 && ones * b >= 10 && tens * b + carry < 10;
-      })
+      id: 'M2D1_C1_P2', label: '2けた×1けた 繰り上がり1回・積2けた', point: '27×3', example: [27, 3], difficulty: 2.14, targetSeconds: 5.3,
+      generate: () => generateByCondition('M2D1_C1_P2', () => [randInt(11, 49), randInt(2, 5)], ([a, b]) => countCarriesByDigit(a, b) === 1 && a * b < 100)
     },
     {
-      id: 'M2D1_C_TENS', label: '2けた×1けた 十の位で繰り上がり', point: '43×8', example: [43, 8], difficulty: 2.32, targetSeconds: 5.8,
-      generate: () => generateByCondition('M2D1_C_TENS', () => [randInt(11, 99), randInt(2, 9)], ([a, b]) => {
-        const ones = a % 10;
-        const tens = Math.floor(a / 10);
-        return ones * b < 10 && tens * b >= 10;
-      })
+      id: 'M2D1_C1_P3', label: '2けた×1けた 繰り上がり1回・積3けた', point: '43×3', example: [43, 3], difficulty: 2.30, targetSeconds: 5.8,
+      generate: () => generateByCondition('M2D1_C1_P3', () => [randInt(21, 89), randInt(2, 6)], ([a, b]) => countCarriesByDigit(a, b) === 1 && a * b >= 100)
     },
     {
-      id: 'M2D1_C_BOTH', label: '2けた×1けた 複数回の繰り上がり', point: '78×6', example: [78, 6], difficulty: 2.55, targetSeconds: 6.2,
-      generate: () => generateByCondition('M2D1_C_BOTH', () => [randInt(11, 99), randInt(2, 9)], ([a, b]) => countCarriesByDigit(a, b) >= 2)
+      id: 'M2D1_CM_P3', label: '2けた×1けた 繰り上がり複数・積3けた', point: '78×6', example: [78, 6], difficulty: 2.55, targetSeconds: 6.2,
+      generate: () => generateByCondition('M2D1_CM_P3', () => [randInt(22, 99), randInt(3, 9)], ([a, b]) => countCarriesByDigit(a, b) >= 2 && a * b >= 100)
     },
     {
-      id: 'M2D1_MIX', label: '2けた×1けた 混合', point: '56×7', example: [56, 7], difficulty: 2.68, targetSeconds: 6.5,
+      id: 'M2D1_MIX', label: '2けた×1けた 積の桁数混合', point: '56×7', example: [56, 7], difficulty: 2.70, targetSeconds: 6.6,
       generate: () => makeProblem('M2D1_MIX', randInt(11, 99), randInt(2, 9))
     },
 
-    // 3けた×1けたの前提。何百×1けたを独立して確認する。
+    // 22〜28: 3けた×1けた。何百をかける計算から入り、積3けたと4けたを分ける。
     {
       id: 'HUNDREDS_X_1D', label: '何百×1けた', point: '200×3', example: [200, 3], difficulty: 2.35, targetSeconds: 5.8,
       generate: () => makeProblem('HUNDREDS_X_1D', randInt(1, 9) * 100, randInt(2, 9))
     },
     {
-      id: 'M3D1_NC', label: '3けた×1けた 繰り上がりなし', point: '213×2', example: [213, 2], difficulty: 2.85, targetSeconds: 7.2,
-      generate: () => generateByCondition('M3D1_NC', () => [randInt(111, 999), randInt(2, 9)], ([a, b]) => countCarriesByDigit(a, b) === 0 && !String(a).includes('0'))
+      id: 'M3D1_NC_P3', label: '3けた×1けた 繰り上がりなし・積3けた', point: '213×2', example: [213, 2], difficulty: 2.85, targetSeconds: 7.2,
+      generate: () => generateByCondition('M3D1_NC_P3', () => [randInt(111, 444), randInt(2, 4)], ([a, b]) => countCarriesByDigit(a, b) === 0 && a * b < 1000 && !String(a).includes('0'))
     },
     {
-      id: 'M3D1_C_ONES', label: '3けた×1けた 一の位で繰り上がり', point: '128×3', example: [128, 3], difficulty: 3.05, targetSeconds: 7.8,
-      generate: () => generateByCondition('M3D1_C_ONES', () => [randInt(111, 999), randInt(2, 9)], ([a, b]) => {
-        const onesCarry = (a % 10) * b >= 10;
-        return onesCarry && countCarriesByDigit(a, b) <= 2 && !String(a).includes('0');
-      })
+      id: 'M3D1_C_P3', label: '3けた×1けた 繰り上がりあり・積3けた', point: '128×3', example: [128, 3], difficulty: 3.05, targetSeconds: 7.8,
+      generate: () => generateByCondition('M3D1_C_P3', () => [randInt(111, 499), randInt(2, 6)], ([a, b]) => countCarriesByDigit(a, b) >= 1 && a * b < 1000 && !String(a).includes('0'))
     },
     {
-      id: 'M3D1_C_TENS', label: '3けた×1けた 十の位で繰り上がり', point: '263×4', example: [263, 4], difficulty: 3.18, targetSeconds: 8.0,
-      generate: () => generateByCondition('M3D1_C_TENS', () => [randInt(111, 999), randInt(2, 9)], ([a, b]) => {
-        const ones = a % 10;
-        const tens = Math.floor(a / 10) % 10;
-        const carryFromOnes = Math.floor((ones * b) / 10);
-        return tens * b + carryFromOnes >= 10 && countCarriesByDigit(a, b) <= 2 && !String(a).includes('0');
-      })
+      id: 'M3D1_C1_P4', label: '3けた×1けた 繰り上がり1〜2回・積4けた', point: '263×4', example: [263, 4], difficulty: 3.25, targetSeconds: 8.3,
+      generate: () => generateByCondition('M3D1_C1_P4', () => [randInt(201, 699), randInt(2, 6)], ([a, b]) => countCarriesByDigit(a, b) >= 1 && countCarriesByDigit(a, b) <= 2 && a * b >= 1000 && !String(a).includes('0'))
     },
     {
-      id: 'M3D1_C_CHAIN', label: '3けた×1けた 連続した繰り上がり', point: '678×7', example: [678, 7], difficulty: 3.55, targetSeconds: 8.8,
-      generate: () => generateByCondition('M3D1_C_CHAIN', () => [randInt(111, 999), randInt(2, 9)], ([a, b]) => countCarriesByDigit(a, b) >= 3)
+      id: 'M3D1_CM_P4', label: '3けた×1けた 連続繰り上がり・積4けた', point: '678×7', example: [678, 7], difficulty: 3.58, targetSeconds: 8.9,
+      generate: () => generateByCondition('M3D1_CM_P4', () => [randInt(222, 999), randInt(3, 9)], ([a, b]) => countCarriesByDigit(a, b) >= 3 && a * b >= 1000)
     },
     {
-      id: 'M3D1_ZERO_INSIDE', label: '3けた×1けた 0を含む', point: '304×6', example: [304, 6], difficulty: 3.08, targetSeconds: 8.2,
-      generate: () => generateByCondition('M3D1_ZERO_INSIDE', () => [randInt(101, 909), randInt(2, 9)], ([a]) => String(a).includes('0') && a % 100 !== 0)
+      id: 'M3D1_ZERO', label: '3けた×1けた 0を含む', point: '304×6', example: [304, 6], difficulty: 3.15, targetSeconds: 8.3,
+      generate: () => generateByCondition('M3D1_ZERO', () => [randInt(101, 909), randInt(2, 9)], ([a]) => String(a).includes('0') && a % 100 !== 0)
     },
     {
-      id: 'M3D1_MIX', label: '3けた×1けた 混合', point: '476×8', example: [476, 8], difficulty: 3.65, targetSeconds: 9.2,
+      id: 'M3D1_MIX', label: '3けた×1けた 積の桁数混合', point: '476×8', example: [476, 8], difficulty: 3.68, targetSeconds: 9.3,
       generate: () => makeProblem('M3D1_MIX', randInt(101, 999), randInt(2, 9))
     },
 
-    // 2けた・3けたに、10・何十をかける準備。
+    // 29〜40: 拡張九九は、1けたをかける筆算を習得してから扱う。
+    ...buildKukuTypes('base', range(11, 20), range(1, 10)),
+    makeKukuMixType('KUKU_MIX_11_20', '11〜20の段 混合', '16×7', range(11, 20), range(1, 10), 1.86, 4.8),
+    makeKukuMixType('KUKU_MIX_0_20', '0〜20の段 混合', '18×9', range(0, 20), range(1, 10), 1.94, 5.0),
+
+    // 41〜46: 2けた・3けたの数に10、何十をかける準備。
     {
       id: 'TENS_X_TENS', label: '何十×何十', point: '30×40', example: [30, 40], difficulty: 3.25, targetSeconds: 7.6,
       generate: () => makeProblem('TENS_X_TENS', randInt(2, 9) * 10, randInt(2, 9) * 10)
@@ -206,62 +193,53 @@
       generate: () => makeProblem('M3D_X_TENS', randInt(101, 999), randInt(2, 9) * 10)
     },
 
-    // 乗数11〜20の拡張。2けた×2けた前の暗算土台として扱う。
-    ...buildKukuTypes('extended', range(11, 20)),
-    makeKukuMixType('KUKU_EXT_MIX_0_20_X11_20', '0〜20×11〜20 混合', '18×17', range(0, 20), range(11, 20), 3.95, 10.8),
-
+    // 47〜56: 2けた・3けた×2けた。積の桁数別に段階化。
     {
-      id: 'M2D2_TEN', label: '2けた×10台', point: '23×12', example: [23, 12], difficulty: 4.10, targetSeconds: 12.0,
-      generate: () => makeProblem('M2D2_TEN', randInt(12, 99), randInt(11, 19))
+      id: 'M2D2_LC_P3', label: '2けた×2けた 繰り上がり少なめ・積3けた', point: '21×13', example: [21, 13], difficulty: 4.25, targetSeconds: 12.2,
+      generate: () => generateByCondition('M2D2_LC_P3', () => [randInt(11, 49), randInt(11, 29)], ([a, b]) => a * b < 1000 && countCarriesTwoDigit(a, b) <= 1)
     },
     {
-      id: 'M2D2_NO_CARRY', label: '2けた×2けた 繰り上がり少なめ', point: '21×13', example: [21, 13], difficulty: 4.35, targetSeconds: 12.4,
-      generate: () => generateByCondition('M2D2_NO_CARRY', () => [randInt(11, 49), randInt(11, 39)], ([a, b]) => a * b < 1600 && countCarriesTwoDigit(a, b) <= 1)
+      id: 'M2D2_MC_P3', label: '2けた×2けた 繰り上がり複数・積3けた', point: '38×24', example: [38, 24], difficulty: 4.55, targetSeconds: 13.2,
+      generate: () => generateByCondition('M2D2_MC_P3', () => [randInt(22, 69), randInt(12, 39)], ([a, b]) => a * b < 1000 && countCarriesTwoDigit(a, b) >= 2)
     },
     {
-      id: 'M2D2_CARRY', label: '2けた×2けた 繰り上がりあり', point: '48×27', example: [48, 27], difficulty: 4.78, targetSeconds: 13.8,
-      generate: () => generateByCondition('M2D2_CARRY', () => [randInt(22, 99), randInt(22, 99)], ([a, b]) => countCarriesTwoDigit(a, b) >= 2)
+      id: 'M2D2_LC_P4', label: '2けた×2けた 繰り上がり少なめ・積4けた', point: '42×25', example: [42, 25], difficulty: 4.72, targetSeconds: 13.8,
+      generate: () => generateByCondition('M2D2_LC_P4', () => [randInt(32, 79), randInt(15, 49)], ([a, b]) => a * b >= 1000 && countCarriesTwoDigit(a, b) <= 2)
     },
     {
-      id: 'M2D2_ZERO_PRODUCT', label: '2けた×2けた 0を含む計算', point: '40×23', example: [40, 23], difficulty: 4.25, targetSeconds: 12.6,
-      generate: () => {
-        const useZeroLeft = Math.random() < 0.5;
-        const a = useZeroLeft ? randInt(2, 9) * 10 : randInt(12, 99);
-        const b = useZeroLeft ? randInt(12, 99) : randInt(2, 9) * 10;
-        return makeProblem('M2D2_ZERO_PRODUCT', a, b);
-      }
+      id: 'M2D2_MC_P4', label: '2けた×2けた 繰り上がり複数・積4けた', point: '76×34', example: [76, 34], difficulty: 5.02, targetSeconds: 15.0,
+      generate: () => generateByCondition('M2D2_MC_P4', () => [randInt(42, 99), randInt(22, 99)], ([a, b]) => a * b >= 1000 && countCarriesTwoDigit(a, b) >= 3)
     },
     {
-      id: 'M2D2_MIX', label: '2けた×2けた 混合', point: '76×34', example: [76, 34], difficulty: 5.05, targetSeconds: 15.0,
-      generate: () => makeProblem('M2D2_MIX', randInt(12, 99), randInt(12, 99))
-    },
-
-    {
-      id: 'M3D2_TEN', label: '3けた×10台', point: '123×12', example: [123, 12], difficulty: 5.28, targetSeconds: 17.5,
-      generate: () => makeProblem('M3D2_TEN', randInt(101, 999), randInt(11, 19))
+      id: 'M2D2_MIX', label: '2けた×2けた 積の桁数混合', point: '48×27', example: [48, 27], difficulty: 5.18, targetSeconds: 15.8,
+      generate: () => makeProblem('M2D2_MIX', randInt(11, 99), randInt(11, 99))
     },
     {
-      id: 'M3D2_NO_CARRY', label: '3けた×2けた 繰り上がり少なめ', point: '213×21', example: [213, 21], difficulty: 5.55, targetSeconds: 18.8,
-      generate: () => generateByCondition('M3D2_NO_CARRY', () => [randInt(101, 499), randInt(11, 39)], ([a, b]) => countCarriesTwoDigit(a, b) <= 2)
+      id: 'M3D2_LC_P4', label: '3けた×2けた 繰り上がり少なめ・積4けた', point: '213×21', example: [213, 21], difficulty: 5.48, targetSeconds: 18.5,
+      generate: () => generateByCondition('M3D2_LC_P4', () => [randInt(101, 399), randInt(11, 39)], ([a, b]) => a * b < 10000 && countCarriesTwoDigit(a, b) <= 2)
     },
     {
-      id: 'M3D2_CARRY', label: '3けた×2けた 繰り上がりあり', point: '386×47', example: [386, 47], difficulty: 6.05, targetSeconds: 21.5,
-      generate: () => generateByCondition('M3D2_CARRY', () => [randInt(222, 999), randInt(22, 99)], ([a, b]) => countCarriesTwoDigit(a, b) >= 3)
+      id: 'M3D2_MC_P4', label: '3けた×2けた 繰り上がり複数・積4けた', point: '386×24', example: [386, 24], difficulty: 5.82, targetSeconds: 20.0,
+      generate: () => generateByCondition('M3D2_MC_P4', () => [randInt(201, 699), randInt(12, 39)], ([a, b]) => a * b < 10000 && countCarriesTwoDigit(a, b) >= 3)
     },
     {
-      id: 'M3D2_ZERO_PRODUCT', label: '3けた×2けた 0を含む計算', point: '304×20', example: [304, 20], difficulty: 5.72, targetSeconds: 20.0,
-      generate: () => {
-        const a = Math.random() < 0.5 ? randInt(101, 909) : randInt(1, 9) * 100 + randInt(1, 9);
-        const b = Math.random() < 0.55 ? randInt(2, 9) * 10 : randInt(11, 99);
-        return makeProblem('M3D2_ZERO_PRODUCT', a, b);
-      }
+      id: 'M3D2_LC_P5', label: '3けた×2けた 繰り上がり少なめ・積5けた', point: '425×25', example: [425, 25], difficulty: 6.02, targetSeconds: 21.2,
+      generate: () => generateByCondition('M3D2_LC_P5', () => [randInt(301, 799), randInt(15, 49)], ([a, b]) => a * b >= 10000 && countCarriesTwoDigit(a, b) <= 3)
     },
     {
-      id: 'M3D2_MIX', label: '3けた×2けた 混合', point: '728×36', example: [728, 36], difficulty: 6.35, targetSeconds: 23.0,
+      id: 'M3D2_MC_P5', label: '3けた×2けた 繰り上がり複数・積5けた', point: '728×36', example: [728, 36], difficulty: 6.35, targetSeconds: 23.0,
+      generate: () => generateByCondition('M3D2_MC_P5', () => [randInt(402, 999), randInt(22, 99)], ([a, b]) => a * b >= 10000 && countCarriesTwoDigit(a, b) >= 4)
+    },
+    {
+      id: 'M3D2_MIX', label: '3けた×2けた 積の桁数混合', point: '528×47', example: [528, 47], difficulty: 6.52, targetSeconds: 24.0,
       generate: () => makeProblem('M3D2_MIX', randInt(101, 999), randInt(11, 99))
     },
 
-    // 小数の乗法。0.?×? から入り、1.2×3、小数×小数へ進む。
+    // 57〜78: 乗数11〜20の拡張は、3けた×2けたの筆算習得後に置く。
+    ...buildKukuTypes('extended', [5, 2, 3, 4, 6, 7, 8, 9, 1, 0, 10, ...range(11, 20)], range(11, 20)),
+    makeKukuMixType('KUKU_EXT_MIX_0_20_X11_20', '0〜20×11〜20 混合', '18×17', range(0, 20), range(11, 20), 3.95, 10.8),
+
+    // 79〜88: 小数の乗法。小数点は答え欄に先に表示する。
     {
       id: 'DEC_TENTHS_LT1_X_1D', label: '0.?×1けた', point: '0.2×3', example: [0.2, 3], difficulty: 4.65, targetSeconds: 11.5,
       generate: () => makeProblem('DEC_TENTHS_LT1_X_1D', tenths(randInt(1, 9)), randInt(2, 9))
@@ -301,6 +279,62 @@
     {
       id: 'DECIMAL_MUL_MIX', label: '小数のかけ算 混合', point: '2.4×1.5', example: [2.4, 1.5], difficulty: 7.10, targetSeconds: 27.0,
       generate: () => makeProblem('DECIMAL_MUL_MIX', Math.random() < 0.5 ? tenths(randInt(2, 99)) : hundredths(randInt(2, 999)), Math.random() < 0.5 ? tenths(randInt(2, 99)) : randInt(2, 99))
+    },
+
+    // 89〜100: 学習指導要領の延長線上に置く熟達者向け段階。
+    {
+      id: 'M4D1_P4', label: '4けた×1けた・積4けた', point: '1234×2', example: [1234, 2], difficulty: 7.35, targetSeconds: 28.0,
+      generate: () => generateByCondition('M4D1_P4', () => [randInt(1001, 4999), randInt(2, 4)], ([a, b]) => a * b < 10000)
+    },
+    {
+      id: 'M4D1_P5', label: '4けた×1けた・積5けた', point: '6789×7', example: [6789, 7], difficulty: 7.65, targetSeconds: 30.0,
+      generate: () => generateByCondition('M4D1_P5', () => [randInt(2001, 9999), randInt(2, 9)], ([a, b]) => a * b >= 10000)
+    },
+    {
+      id: 'M4D2_P5', label: '4けた×2けた・積5けた', point: '1234×12', example: [1234, 12], difficulty: 7.95, targetSeconds: 34.0,
+      generate: () => generateByCondition('M4D2_P5', () => [randInt(1001, 4999), randInt(11, 29)], ([a, b]) => a * b < 100000)
+    },
+    {
+      id: 'M4D2_P6', label: '4けた×2けた・積6けた', point: '6789×47', example: [6789, 47], difficulty: 8.25, targetSeconds: 38.0,
+      generate: () => generateByCondition('M4D2_P6', () => [randInt(3001, 9999), randInt(22, 99)], ([a, b]) => a * b >= 100000)
+    },
+    {
+      id: 'M2D3_P4', label: '2けた×3けた・積4けた', point: '24×123', example: [24, 123], difficulty: 8.05, targetSeconds: 34.0,
+      generate: () => generateByCondition('M2D3_P4', () => [randInt(11, 49), randInt(101, 399)], ([a, b]) => a * b < 10000)
+    },
+    {
+      id: 'M2D3_P5', label: '2けた×3けた・積5けた', point: '76×428', example: [76, 428], difficulty: 8.30, targetSeconds: 38.0,
+      generate: () => generateByCondition('M2D3_P5', () => [randInt(32, 99), randInt(201, 999)], ([a, b]) => a * b >= 10000)
+    },
+    {
+      id: 'M3D3_P5', label: '3けた×3けた・積5けた', point: '123×246', example: [123, 246], difficulty: 8.55, targetSeconds: 42.0,
+      generate: () => generateByCondition('M3D3_P5', () => [randInt(101, 399), randInt(101, 399)], ([a, b]) => a * b < 100000)
+    },
+    {
+      id: 'M3D3_P6', label: '3けた×3けた・積6けた', point: '728×436', example: [728, 436], difficulty: 8.85, targetSeconds: 47.0,
+      generate: () => generateByCondition('M3D3_P6', () => [randInt(302, 999), randInt(202, 999)], ([a, b]) => a * b >= 100000)
+    },
+    {
+      id: 'M4D3_P6', label: '4けた×3けた・積6けた', point: '1234×246', example: [1234, 246], difficulty: 9.10, targetSeconds: 52.0,
+      generate: () => generateByCondition('M4D3_P6', () => [randInt(1001, 3999), randInt(101, 399)], ([a, b]) => a * b < 1000000)
+    },
+    {
+      id: 'M4D3_P7', label: '4けた×3けた・積7けた', point: '6789×436', example: [6789, 436], difficulty: 9.40, targetSeconds: 58.0,
+      generate: () => generateByCondition('M4D3_P7', () => [randInt(3001, 9999), randInt(202, 999)], ([a, b]) => a * b >= 1000000)
+    },
+    {
+      id: 'DEC_X_HUNDREDTHS', label: '小数×小数第二位', point: '12.4×0.25', example: [12.4, 0.25], difficulty: 9.25, targetSeconds: 48.0,
+      generate: () => makeProblem('DEC_X_HUNDREDTHS', Math.random() < 0.5 ? tenths(randInt(11, 999)) : hundredths(randInt(101, 9999)), hundredths(randInt(1, 99)))
+    },
+    {
+      id: 'MASTER_MUL_MIX', label: '乗法 熟達者総合', point: '1234×56', example: [1234, 56], difficulty: 9.80, targetSeconds: 60.0,
+      generate: () => {
+        const mode = randInt(1, 4);
+        if (mode === 1) return makeProblem('MASTER_MUL_MIX', randInt(1001, 9999), randInt(2, 99));
+        if (mode === 2) return makeProblem('MASTER_MUL_MIX', randInt(101, 999), randInt(101, 999));
+        if (mode === 3) return makeProblem('MASTER_MUL_MIX', hundredths(randInt(101, 9999)), hundredths(randInt(1, 999)));
+        return makeProblem('MASTER_MUL_MIX', randInt(1001, 9999), randInt(101, 999));
+      }
     }
   ];
 
@@ -416,8 +450,7 @@
     return values;
   }
 
-  function buildKukuTypes(mode, multipliers) {
-    const rows = [0, 1, 2, 5, 10, 3, 4, 6, 7, 8, 9, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+  function buildKukuTypes(mode, rows, multipliers) {
     return rows.map((row) => makeKukuType(row, mode, multipliers));
   }
 
