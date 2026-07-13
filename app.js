@@ -1,10 +1,12 @@
 (() => {
   'use strict';
 
-  const STORAGE_KEY = 'mulrate_v1_0_0_beta13_state';
+  const STORAGE_KEY = 'mulrate_v1_0_0_beta15_state';
   const MAX_RATE = 99999999;
   const SET_SIZE = 10;
   const ANSWER_EPSILON = 1e-9;
+  const RATE_INFLATION_BASE = 5200;
+  const RATE_CAP_BASE = 26000;
 
   const PATTERNS = [
     { id: 'A', center: 10, recent: 0, base: 0, challenge: 0 },
@@ -51,6 +53,7 @@
     app: document.getElementById('app'),
     navWindow: document.getElementById('navWindow'),
     effectLayer: document.getElementById('effectLayer'),
+    gameCard: document.querySelector('#gameScreen .game-card'),
     homeButton: document.getElementById('homeButton'),
     pauseButton: document.getElementById('pauseButton'),
     statusText: document.getElementById('statusText'),
@@ -836,7 +839,7 @@
     updateOperationState();
     beep(correct ? 'ok' : 'ng');
     triggerAnswerEffect(correct);
-    setMessage(correct ? `正　${formatSeconds(elapsed)}秒　+${formatRate(Math.max(0, problem.firstImpact))}` : `誤　${formatSeconds(elapsed)}秒　ロス ${formatRate(problem.lostPotential)}`, correct ? 'success' : 'danger');
+    setMessage(correct ? `正解！　${formatSeconds(elapsed)}秒　+${formatRate(Math.max(0, problem.firstImpact))}` : `確認　ロス ${formatRate(problem.lostPotential)}`, correct ? 'success' : 'danger');
     els.subInfo.textContent = correct ? '次へ進みます' : 'あとで答え直しできます';
 
     window.setTimeout(() => {
@@ -936,7 +939,7 @@
     updateOperationState();
     beep(correct ? 'ok' : 'ng');
     triggerAnswerEffect(correct);
-    setMessage(correct ? `答え直し成功　+${formatRate(Math.max(0, problem.retryImpact))}` : `まだ違います　ロス ${formatRate(problem.lostPotential)}`, correct ? 'success' : 'danger');
+    setMessage(correct ? `正解！　答え直し成功　+${formatRate(Math.max(0, problem.retryImpact))}` : `確認　ロス ${formatRate(problem.lostPotential)}`, correct ? 'success' : 'danger');
     els.subInfo.textContent = correct ? '減点を一部回復しました' : `正しくは ${formatAnswer(problem.answer)}`;
 
     window.setTimeout(() => {
@@ -976,6 +979,7 @@
     if (!session.practiceMode) {
       updateLearnedTypes(summary, outcome);
       updateProgress(outcome);
+      state.learnedTypes = repairLearnedTypes(state);
     }
     rememberRecentProblems(session.questions);
     state.history.push({
@@ -1115,16 +1119,29 @@
     if (isSkipOutcome(outcome)) delta *= 1.28;
     if (options.practiceMode && delta > 0) delta *= 0.3;
 
+    const avgDifficulty = average(summary.questions.map((q) => findType(q.typeId)?.difficulty || 1));
+
     if (outcome === 'stay' && delta > 0) {
-      delta *= Math.pow(0.5, state.progress.patternStayCount + 1);
+      const highStage = avgDifficulty >= 8.0;
+      delta *= Math.max(highStage ? 0.78 : 0.35, Math.pow(highStage ? 0.88 : 0.68, state.progress.patternStayCount + 1));
     }
     if (isKukuType(currentType()) && outcome === 'stay' && summary.firstCorrect === SET_SIZE) {
       delta = Math.max(0, delta);
     }
 
-    const avgDifficulty = average(summary.questions.map((q) => findType(q.typeId)?.difficulty || 1));
-    const cap = Math.max(120, 1900 * Math.pow(avgDifficulty, 1.12));
-    delta = clamp(delta, -cap * 0.32, cap * (isSkipOutcome(outcome) ? 1.42 : 1.08));
+    const cap = Math.max(360, RATE_CAP_BASE * Math.pow(avgDifficulty, 1.20));
+    if (summary.finalCorrect >= 8 && delta < 0) {
+      delta = 0;
+    }
+    if (outcome === 'stay' && summary.finalCorrect === SET_SIZE && summary.avgFirstTime <= summary.targetTime * 1.75) {
+      const highAccuracy = summary.firstCorrect >= 8;
+      const masteryFloor = avgDifficulty >= 8.0 ? (highAccuracy ? 0.30 : 0.18) : 0.04;
+      delta = Math.max(delta, cap * masteryFloor);
+    }
+    if (state.progress.typeIndex === CURRICULUM.length - 1 && summary.ratingBefore >= 90000000 && summary.finalCorrect === SET_SIZE && summary.firstCorrect >= 9 && summary.avgFirstTime <= summary.targetTime * 1.15) {
+      delta = Math.max(delta, (MAX_RATE - summary.ratingBefore) * 0.50);
+    }
+    delta = clamp(delta, -cap * 0.20, Math.max(cap * (isSkipOutcome(outcome) ? 1.46 : 1.12), delta));
     return Math.round(delta);
   }
 
@@ -1136,16 +1153,23 @@
     let delta = deltaFromPerformance(summary, possible, possible, 'skip');
     if (options.practiceMode && delta > 0) delta *= 0.3;
     const avgDifficulty = average(summary.questions.map((q) => findType(q.typeId)?.difficulty || 1));
-    const cap = Math.max(120, 1900 * Math.pow(avgDifficulty, 1.12));
-    return Math.round(clamp(delta, -cap * 0.32, cap * 1.42));
+    const cap = Math.max(360, RATE_CAP_BASE * Math.pow(avgDifficulty, 1.20));
+    return Math.round(clamp(delta, -cap * 0.20, cap * 1.46));
+  }
+
+
+  function getEndgameRateBoost(avgDifficulty) {
+    const x = Math.max(0, avgDifficulty - 6.4);
+    return 1 + Math.pow(x, 1.35) * 0.38;
   }
 
   function deltaFromPerformance(summary, achieved, possible, outcome) {
     const performanceRatio = possible ? achieved / possible : 0;
     const avgDifficulty = average(summary.questions.map((q) => findType(q.typeId)?.difficulty || 1));
     const expectedRatio = clamp(0.25 + Math.log10(summary.ratingBefore + 100) / 24, 0.28, 0.76);
-    const inflation = 360 * Math.pow(avgDifficulty, 1.38) * (1 + Math.log2(avgDifficulty + 1));
-    const suppression = 1 / (1 + Math.log10(summary.ratingBefore + 10) / 6.2);
+    const endgameBoost = getEndgameRateBoost(avgDifficulty);
+    const inflation = RATE_INFLATION_BASE * Math.pow(avgDifficulty, 1.42) * (1 + Math.log2(avgDifficulty + 1)) * endgameBoost;
+    const suppression = 1 / (1 + Math.log10(summary.ratingBefore + 10) / (6.2 + Math.max(0, avgDifficulty - 6.2) * 1.8));
 
     let delta = (performanceRatio - expectedRatio) * inflation;
     if (summary.firstCorrect === SET_SIZE) {
@@ -1159,6 +1183,8 @@
     if (summary.finalCorrect === SET_SIZE && summary.firstCorrect < SET_SIZE) delta += 0.035 * inflation;
     if (summary.finalCorrect <= 6) delta -= 0.1 * inflation;
     if (isSkipOutcome(outcome)) delta += 0.11 * inflation;
+    if (delta > 0 && summary.firstCorrect <= 7) delta *= 0.68;
+    else if (delta > 0 && summary.firstCorrect <= 8) delta *= 0.82;
     return delta * suppression;
   }
 
@@ -1332,17 +1358,22 @@
       return allInitialCorrect && maxTime < limit && (pattern === 'A-3' || outcome === 'kuku_skip_row');
     }
 
+    const typeInitialCorrect = questions.filter((q) => q.initialCorrect).length;
+    const typeInitialRate = typeInitialCorrect / Math.max(1, questions.length);
+    const highStage = type.difficulty >= 7.0;
+    const finalStage = type.id === CURRICULUM[CURRICULUM.length - 1].id;
+    const stableHighStage = highStage && allFinalCorrect && summary.finalCorrect >= 9 && summary.firstCorrect >= 8 && typeInitialRate >= 0.75 && avgTypeTime <= type.targetSeconds * 1.75;
+    const stableFinalStage = finalStage && allFinalCorrect && summary.finalCorrect >= 9 && summary.firstCorrect >= 7 && avgTypeTime <= type.targetSeconds * 1.85;
+
     // 基本確認で安定していれば、その時点で反復を解放する。
     if (pattern === 'A') {
-      return allInitialCorrect && avgTypeTime <= type.targetSeconds * 1.20;
+      return (allInitialCorrect && avgTypeTime <= type.targetSeconds * 1.20) || stableHighStage || stableFinalStage;
     }
 
     // 次の類型へ進めるだけでなく、初回正解の安定も見て反復対象にする。
     // 高速だがミスが残る場合は、解放を少し遅らせる。
-    if (pattern === 'C' && (isSkipOutcome(outcome) || outcome === 'advance')) {
-      const typeInitialCorrect = questions.filter((q) => q.initialCorrect).length;
-      const typeInitialRate = typeInitialCorrect / Math.max(1, questions.length);
-      return allFinalCorrect && summary.finalCorrect >= 9 && summary.firstCorrect >= 9 && typeInitialRate >= 0.9 && avgTypeTime <= type.targetSeconds * 1.55;
+    if ((pattern === 'C' || highStage || finalStage) && (isSkipOutcome(outcome) || outcome === 'advance' || outcome === 'stay')) {
+      return stableHighStage || stableFinalStage || (allFinalCorrect && summary.finalCorrect >= 9 && summary.firstCorrect >= 9 && typeInitialRate >= 0.9 && avgTypeTime <= type.targetSeconds * 1.55);
     }
 
     return false;
@@ -1574,24 +1605,24 @@
     } else if (layout === 'topLeft') {
       els.keyHint.textContent = '疑似テンキー左　1 2 3 / Q W E / A S D F / Z　Space：決定';
     } else {
-      els.keyHint.textContent = '疑似テンキー右　7 8 9 0 / U I O / J K L / ;：決定';
+      els.keyHint.textContent = '疑似テンキー右　7 8 9 0 / U I O / J K L ;　Space：決定';
     }
   }
 
   function getKeypadKeys(layout) {
     if (layout === 'topLeft') {
       return [
-        digitKey('1', '', 1, 3, 2, '1'), digitKey('2', '', 1, 5, 2, '2'), digitKey('3', '', 1, 7, 2, '3'),
+        digitKey('1', '', 1, 1, 2, '1'), digitKey('2', '', 1, 3, 2, '2'), digitKey('3', '', 1, 5, 2, '3'),
         digitKey('4', '', 2, 2, 2, 'Q'), digitKey('5', '', 2, 4, 2, 'W'), digitKey('6', '', 2, 6, 2, 'E'),
-        digitKey('7', '', 3, 1, 2, 'A'), digitKey('8', '', 3, 3, 2, 'S'), digitKey('9', '', 3, 5, 2, 'D'), digitKey('0', '', 3, 7, 2, 'F'),
-        controlKey('←', 'backspace', '', 4, 1, 2, 'Z'), okKey('Space', 'space-key', 4, 3, 6, 'Space')
+        digitKey('7', '', 3, 3, 2, 'A'), digitKey('8', '', 3, 5, 2, 'S'), digitKey('9', '', 3, 7, 2, 'D'), digitKey('0', '', 3, 9, 2, 'F'),
+        controlKey('←', 'backspace', '', 4, 4, 2, 'Z'), okKey('Space', 'space-key', 4, 6, 5, 'Space')
       ];
     }
     if (layout === 'pseudo') {
       return [
-        digitKey('7', '', 1, 2, 2, '7'), digitKey('8', '', 1, 4, 2, '8'), digitKey('9', '', 1, 6, 2, '9'), digitKey('0', '', 1, 8, 2, '0'),
-        digitKey('4', '', 2, 1, 2, 'U'), digitKey('5', '', 2, 3, 2, 'I'), digitKey('6', '', 2, 5, 2, 'O'), controlKey('←', 'backspace', '', 2, 7, 2, 'Backspace'),
-        digitKey('1', '', 3, 2, 2, 'J'), digitKey('2', '', 3, 4, 2, 'K'), digitKey('3', '', 3, 6, 2, 'L'), okKey(';', '', 3, 8, 2, ';')
+        digitKey('7', '', 1, 1, 2, '7'), digitKey('8', '', 1, 3, 2, '8'), digitKey('9', '', 1, 5, 2, '9'), digitKey('0', '', 1, 7, 2, '0'),
+        digitKey('4', '', 2, 2, 2, 'U'), digitKey('5', '', 2, 4, 2, 'I'), digitKey('6', '', 2, 6, 2, 'O'), controlKey('←', 'backspace', '', 2, 8, 2, 'Backspace'),
+        digitKey('1', '', 3, 3, 2, 'J'), digitKey('2', '', 3, 5, 2, 'K'), digitKey('3', '', 3, 7, 2, 'L'), okKey(';', '', 3, 9, 2, ';')
       ];
     }
     return [
@@ -1817,17 +1848,26 @@
     if (!state.settings.sound) return;
     try {
       audioContext ||= new (window.AudioContext || window.webkitAudioContext)();
-      const oscillator = audioContext.createOscillator();
-      const gain = audioContext.createGain();
-      oscillator.type = 'sine';
-      oscillator.frequency.value = type === 'ok' ? 880 : 180;
-      gain.gain.setValueAtTime(0.0001, audioContext.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.06, audioContext.currentTime + 0.01);
-      gain.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.09);
-      oscillator.connect(gain);
-      gain.connect(audioContext.destination);
-      oscillator.start();
-      oscillator.stop(audioContext.currentTime + 0.1);
+      const playTone = (frequency, startOffset, duration, volume) => {
+        const oscillator = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+        const start = audioContext.currentTime + startOffset;
+        oscillator.type = 'sine';
+        oscillator.frequency.value = frequency;
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.exponentialRampToValueAtTime(volume, start + 0.012);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+        oscillator.connect(gain);
+        gain.connect(audioContext.destination);
+        oscillator.start(start);
+        oscillator.stop(start + duration + 0.02);
+      };
+      if (type === 'ok') {
+        playTone(740, 0, 0.085, 0.045);
+        playTone(990, 0.075, 0.105, 0.050);
+      } else {
+        playTone(210, 0, 0.075, 0.026);
+      }
     } catch (error) {
       console.warn('Sound failed:', error);
     }
@@ -1846,17 +1886,30 @@
   }
 
   function triggerAnswerEffect(correct) {
+    els.effectLayer.classList.remove('correct-pop');
+    els.navWindow.classList.remove('correct-glow');
+    els.answerDisplay.classList.remove('answer-correct', 'answer-wrong');
+    els.gameCard?.classList.remove('wrong-nudge');
+    void els.effectLayer.offsetWidth;
+
     if (correct) {
-      els.effectLayer.classList.remove('splash');
-      void els.effectLayer.offsetWidth;
-      els.effectLayer.classList.add('splash');
-      window.setTimeout(() => els.effectLayer.classList.remove('splash'), 320);
+      els.effectLayer.classList.add('correct-pop');
+      els.navWindow.classList.add('correct-glow');
+      els.answerDisplay.classList.add('answer-correct');
+      window.setTimeout(() => {
+        els.effectLayer.classList.remove('correct-pop');
+        els.navWindow.classList.remove('correct-glow');
+        els.answerDisplay.classList.remove('answer-correct');
+      }, 560);
       return;
     }
-    els.navWindow.classList.remove('shake');
-    void els.navWindow.offsetWidth;
-    els.navWindow.classList.add('shake');
-    window.setTimeout(() => els.navWindow.classList.remove('shake'), 240);
+
+    els.answerDisplay.classList.add('answer-wrong');
+    els.gameCard?.classList.add('wrong-nudge');
+    window.setTimeout(() => {
+      els.answerDisplay.classList.remove('answer-wrong');
+      els.gameCard?.classList.remove('wrong-nudge');
+    }, 240);
   }
 
   function applyPadVisibility() {

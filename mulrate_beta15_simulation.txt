@@ -1,0 +1,54 @@
+
+=== 30分 ===
+A 初学者・ゆっくり型    rate=     6 1763 sets=  33 skips=  2 stays= 14 learned= 7 type=九九 8の段（1〜10） pattern=A-2
+B 標準型          rate=    21 5856 sets=  35 skips= 22 stays=  5 learned=14 type=何十×1けた pattern=F
+C 九九先行・筆算で失速   rate=    29 3770 sets=  36 skips= 26 stays=  1 learned=15 type=2けた×1けた 繰り上がりなし・積2けた pattern=A
+D 高速・ケアレス型     rate=    44 9968 sets=  40 skips= 33 stays=  5 learned=17 type=2けた×1けた 繰り上がり1回・積3けた pattern=F
+E 慎重・高正答型      rate=    16 3540 sets=  33 skips= 13 stays=  1 learned=14 type=10倍・100倍 pattern=A
+F 得意・高速安定型     rate=    52 8594 sets=  38 skips= 36 stays=  1 learned=18 type=2けた×1けた 繰り上がり複数・積3けた pattern=F
+G 不安定・集中波型     rate=    25 1325 sets=  37 skips= 24 stays=  5 learned=15 type=何十×1けた pattern=A
+
+=== 60分 ===
+A 初学者・ゆっくり型    rate=    15 7129 sets=  61 skips=  5 stays= 15 learned=14 type=何十×1けた pattern=F
+B 標準型          rate=    69 2739 sets=  59 skips= 45 stays=  5 learned=20 type=何百×1けた pattern=A
+C 九九先行・筆算で失速   rate=    91 2080 sets=  62 skips= 51 stays=  1 learned=22 type=3けた×1けた 繰り上がりあり・積3けた pattern=D
+D 高速・ケアレス型     rate=   136 7255 sets=  68 skips= 59 stays=  6 learned=24 type=3けた×1けた 連続繰り上がり・積4けた pattern=F
+E 慎重・高正答型      rate=    45 4585 sets=  56 skips= 23 stays=  1 learned=18 type=2けた×1けた 繰り上がり複数・積3けた pattern=A
+F 得意・高速安定型     rate=   151 6565 sets=  66 skips= 63 stays=  1 learned=25 type=3けた×1けた 0を含む pattern=D
+G 不安定・集中波型     rate=    79 7758 sets=  62 skips= 48 stays=  5 learned=21 type=3けた×1けた 繰り上がりなし・積3けた pattern=A
+
+=== 300分 ===
+A 初学者・ゆっくり型    rate=   104 8339 sets= 206 skips=  9 stays= 33 learned=41 type=何百×何十 pattern=B
+B 標準型          rate=   428 5762 sets= 182 skips=121 stays= 10 learned=53 type=3けた×2けた 繰り上がり少なめ・積5けた pattern=C
+C 九九先行・筆算で失速   rate=   459 1613 sets= 188 skips=115 stays= 14 learned=54 type=3けた×2けた 積の桁数混合 pattern=D
+D 高速・ケアレス型     rate=   653 0526 sets= 228 skips=140 stays= 21 learned=77 type=拡張九九 18の段（11〜20） pattern=A-3
+E 慎重・高正答型      rate=   396 4631 sets= 184 skips= 78 stays=  2 learned=51 type=3けた×2けた 繰り上がり少なめ・積4けた pattern=B
+F 得意・高速安定型     rate=  1125 6575 sets= 227 skips=202 stays=  2 learned=86 type=小数のかけ算 混合 pattern=D
+G 不安定・集中波型     rate=   469 6753 sets= 187 skips=120 stays= 14 learned=54 type=拡張九九 5の段（11〜20） pattern=A-1
+
+=== 600分 ===
+A 初学者・ゆっくり型    rate=   175 3769 sets= 301 skips=  9 stays= 69 learned=51 type=3けた×2けた 繰り上がり少なめ・積4けた pattern=B
+B 標準型          rate=   725 1468 sets= 314 skips=150 stays= 27 learned=87 type=小数のかけ算 混合 pattern=F
+C 九九先行・筆算で失速   rate=   776 6520 sets= 324 skips=148 stays= 44 learned=88 type=小数のかけ算 混合 pattern=A
+D 高速・ケアレス型     rate=  1099 8939 sets= 343 skips=153 stays= 64 learned=91 type=4けた×2けた・積6けた pattern=F
+E 慎重・高正答型      rate=   678 8113 sets= 355 skips= 97 stays= 84 learned=78 type=0.??×1けた pattern=B
+F 得意・高速安定型     rate=  2337 1236 sets= 301 skips=216 stays= 19 learned=97 type=4けた×3けた・積7けた pattern=A
+G 不安定・集中波型     rate=   813 6585 sets= 320 skips=153 stays= 36 learned=88 type=4けた×1けた・積5けた pattern=E
+
+=== 1800分 ===
+A 初学者・ゆっくり型    rate=   379 8508 sets= 964 skips= 10 stays=663 learned=67 type=拡張九九 12の段（11〜20） pattern=A-2
+B 標準型          rate=  1418 7563 sets= 502 skips=156 stays=136 learned=97 type=4けた×3けた・積6けた pattern=A
+C 九九先行・筆算で失速   rate=  1522 7659 sets= 550 skips=152 stays=185 learned=96 type=3けた×3けた・積6けた pattern=A
+D 高速・ケアレス型     rate=  2228 2683 sets= 604 skips=156 stays=234 learned=97 type=4けた×3けた・積6けた pattern=A
+E 慎重・高正答型      rate=  2182 9003 sets= 538 skips=120 stays=137 learned=100 type=乗法 熟達者総合 pattern=C
+F 得意・高速安定型     rate=  5795 6199 sets= 506 skips=228 stays=112 learned=100 type=乗法 熟達者総合 pattern=D
+G 不安定・集中波型     rate=  1611 6270 sets= 522 skips=157 stays=157 learned=97 type=4けた×3けた・積7けた pattern=B
+
+=== 6000分 ===
+A 初学者・ゆっくり型    rate=  1146 0125 sets=3837 skips= 10 stays=3530 learned=69 type=拡張九九 14の段（11〜20） pattern=A-2
+B 標準型          rate=  2713 1134 sets= 961 skips=160 stays=448 learned=100 type=乗法 熟達者総合 pattern=E
+C 九九先行・筆算で失速   rate=  2960 2022 sets=1150 skips=156 stays=589 learned=99 type=乗法 熟達者総合 pattern=C
+D 高速・ケアレス型     rate=  4748 3392 sets=1338 skips=163 stays=727 learned=100 type=4けた×4けた 積7〜8けた pattern=A
+E 慎重・高正答型      rate=  6202 1199 sets= 928 skips=132 stays=299 learned=100 type=乗法 熟達者総合 pattern=F
+F 得意・高速安定型     rate=  9999 9999 sets=1221 skips=270 stays=438 learned=100 type=乗法 熟達者総合 pattern=C
+G 不安定・集中波型     rate=  3198 5173 sets=1039 skips=163 stays=496 learned=100 type=4けた×4けた 積7〜8けた pattern=B

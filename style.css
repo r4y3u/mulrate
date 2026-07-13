@@ -544,3 +544,117 @@ label:has(input[type="radio"]:checked) { color: #ffffff; font-weight: 800; }
 .input-zone.no-pad { grid-template-rows: minmax(0, 1fr); }
 .input-zone.no-pad .operation-titlebar { display: none; }
 .input-zone.no-pad #keypadPanel { grid-row: 1; }
+
+/* beta.15: clearer success feedback, quieter error feedback, and QWERTY-shaped pseudo keypads. */
+.effect-layer.correct-pop::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 48%;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, rgba(255,255,255,0.95) 0 12%, rgba(152,224,183,0.62) 25%, rgba(152,224,183,0.18) 52%, rgba(152,224,183,0) 74%);
+  animation: correctBloom 520ms cubic-bezier(.18,.8,.26,1);
+}
+.effect-layer.correct-pop::after {
+  content: "✓";
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  transform: translate(-50%, -50%) scale(0.6);
+  color: #ffffff;
+  font-weight: 900;
+  font-size: clamp(2.6rem, 9dvh, 5.6rem);
+  text-shadow: 0 2px 18px rgba(10, 44, 35, 0.55);
+  animation: correctMark 520ms cubic-bezier(.18,.8,.26,1);
+}
+.nav-window.correct-glow {
+  box-shadow: var(--shadow), inset 0 0 0 2px rgba(152,224,183,0.46), 0 0 34px rgba(120,197,171,0.18);
+}
+.answer-display.answer-correct {
+  background: rgba(152,224,183,0.20);
+  border-color: rgba(255,255,255,0.72);
+  animation: answerCorrectPop 340ms cubic-bezier(.18,.8,.26,1);
+}
+.answer-display.answer-wrong {
+  background: rgba(240,160,151,0.10);
+  border-color: rgba(240,160,151,0.34);
+}
+.game-card.wrong-nudge {
+  animation: wrongNudge 180ms ease-out;
+}
+.message-area.success {
+  color: #dffff0;
+  text-shadow: 0 0 16px rgba(152,224,183,0.28);
+}
+.message-area.danger {
+  color: #e7b7af;
+}
+
+@keyframes correctBloom {
+  0% { width: 34px; height: 34px; opacity: 0; }
+  22% { opacity: 0.95; }
+  100% { width: 560px; height: 560px; opacity: 0; }
+}
+@keyframes correctMark {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.62); }
+  30% { opacity: 1; transform: translate(-50%, -50%) scale(1.06); }
+  100% { opacity: 0; transform: translate(-50%, -58%) scale(1); }
+}
+@keyframes answerCorrectPop {
+  0% { transform: scale(0.98); }
+  45% { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+@keyframes wrongNudge {
+  0%, 100% { transform: translateX(0); }
+  35% { transform: translateX(-3px); }
+  70% { transform: translateX(2px); }
+}
+
+/* Use half-key offsets in a 10-column grid to mimic real QWERTY staggering. */
+.keypad.topLeft,
+.keypad.pseudo {
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: clamp(5px, 0.8dvw, 9px);
+  align-content: center;
+  justify-content: center;
+}
+.keypad.topLeft { grid-template-rows: repeat(4, minmax(54px, 1fr)); }
+.keypad.pseudo { grid-template-rows: repeat(3, minmax(62px, 1fr)); }
+.keypad.topLeft .key,
+.keypad.pseudo .key {
+  width: 100%;
+  min-height: 0;
+  border-radius: 14px;
+}
+
+@media (min-width: 760px) and (orientation: landscape) {
+  .keypad.topLeft {
+    grid-template-rows: repeat(4, clamp(62px, 10.5dvh, 92px));
+  }
+  .keypad.pseudo {
+    grid-template-rows: repeat(3, clamp(72px, 13dvh, 106px));
+  }
+  .keypad.topLeft,
+  .keypad.pseudo {
+    max-width: min(100%, 500px);
+    width: 100%;
+    margin: auto;
+  }
+  .keypad.topLeft .key,
+  .keypad.pseudo .key {
+    font-size: clamp(1.08rem, 2.6dvh, 1.45rem);
+  }
+  .keypad.topLeft .space-key,
+  .keypad.pseudo .ok {
+    font-size: clamp(0.82rem, 2.1dvh, 1rem);
+  }
+}
+
+@media (max-width: 759px), (orientation: portrait) {
+  .keypad.topLeft { grid-template-rows: repeat(4, minmax(48px, 1fr)); }
+  .keypad.pseudo { grid-template-rows: repeat(3, minmax(56px, 1fr)); }
+}

@@ -3,6 +3,8 @@
 
 const SET_SIZE = 10;
 const MAX_RATE = 99999999;
+const RATE_INFLATION_BASE = 5200;
+const RATE_CAP_BASE = 26000;
 const PATTERNS = [
   { id: 'A', center: 10, recent: 0, base: 0, challenge: 0 },
   { id: 'B', center: 9, recent: 0, base: 0, challenge: 1 },
@@ -143,7 +145,7 @@ const LEARNERS = [
   { name: 'C 九九先行・筆算で失速', accuracy: 0.88, speed: 0.96, learning: 0.018, carelessness: 0.025, writtenPenalty: 0.08, kukuBonus: 0.08 },
   { name: 'D 高速・ケアレス型', accuracy: 0.90, speed: 0.72, learning: 0.025, carelessness: 0.115 },
   { name: 'E 慎重・高正答型', accuracy: 0.965, speed: 1.34, learning: 0.024, carelessness: 0.010 },
-  { name: 'F 得意・高速安定型', accuracy: 0.955, speed: 0.78, learning: 0.034, carelessness: 0.010 },
+  { name: 'F 得意・高速安定型', accuracy: 0.955, speed: 0.72, learning: 0.034, carelessness: 0.010 },
   { name: 'G 不安定・集中波型', accuracy: 0.84, speed: 1.03, learning: 0.027, carelessness: 0.040, wave: true }
 ];
 
@@ -222,6 +224,12 @@ function initialAccuracyFactor(summary) {
   return clamp(0.40 + rate * 0.22, 0.40, 0.56);
 }
 
+
+function getEndgameRateBoost(avgDifficulty) {
+  const x = Math.max(0, avgDifficulty - 6.4);
+  return 1 + Math.pow(x, 1.35) * 0.38;
+}
+
 function delta(summary, state, outcome) {
   const possible = summary.items.reduce((sum, item) => sum + 1.25 * item.type.difficulty, 0);
   const achievedRaw = summary.items.reduce((sum, item) => {
@@ -232,8 +240,9 @@ function delta(summary, state, outcome) {
   const ratio = possible ? achieved / possible : 0;
   const avgDifficulty = avg(summary.items.map((i) => i.type.difficulty));
   const expected = clamp(0.25 + Math.log10(state.rating + 100) / 24, 0.28, 0.76);
-  const inflation = 360 * Math.pow(avgDifficulty, 1.38) * (1 + Math.log2(avgDifficulty + 1));
-  const suppression = 1 / (1 + Math.log10(state.rating + 10) / 6.2);
+  const endgameBoost = getEndgameRateBoost(avgDifficulty);
+  const inflation = RATE_INFLATION_BASE * Math.pow(avgDifficulty, 1.42) * (1 + Math.log2(avgDifficulty + 1)) * endgameBoost;
+  const suppression = 1 / (1 + Math.log10(state.rating + 10) / (6.2 + Math.max(0, avgDifficulty - 6.2) * 1.8));
   let d = (ratio - expected) * inflation;
   if (summary.firstCorrect === SET_SIZE) {
     d += 0.10 * inflation;
@@ -246,12 +255,28 @@ function delta(summary, state, outcome) {
   if (summary.finalCorrect === SET_SIZE && summary.firstCorrect < SET_SIZE) d += 0.035 * inflation;
   if (summary.finalCorrect <= 6) d -= 0.10 * inflation;
   if (isSkipOutcome(outcome)) d += 0.11 * inflation;
+  if (d > 0 && summary.firstCorrect <= 7) d *= 0.68;
+  else if (d > 0 && summary.firstCorrect <= 8) d *= 0.82;
   d *= suppression;
   if (isSkipOutcome(outcome)) d *= 1.28;
-  if (outcome === 'stay' && d > 0) d *= Math.pow(0.5, state.patternStayCount + 1);
+  if (outcome === 'stay' && d > 0) {
+    const high = avgDifficulty >= 8.0;
+    d *= Math.max(high ? 0.78 : 0.35, Math.pow(high ? 0.88 : 0.68, state.patternStayCount + 1));
+  }
   if (isKuku(CURRICULUM[state.typeIndex]) && outcome === 'stay' && summary.firstCorrect === SET_SIZE) d = Math.max(0, d);
-  const cap = Math.max(120, 1900 * Math.pow(avgDifficulty, 1.12));
-  return Math.round(clamp(d, -cap * 0.32, cap * (isSkipOutcome(outcome) ? 1.42 : 1.08)));
+  const cap = Math.max(360, RATE_CAP_BASE * Math.pow(avgDifficulty, 1.20));
+  if (summary.finalCorrect >= 8 && d < 0) {
+    d = 0;
+  }
+  if (outcome === 'stay' && summary.finalCorrect === SET_SIZE && summary.avgTime <= summary.targetTime * 1.75) {
+    const highAccuracy = summary.firstCorrect >= 8;
+    const masteryFloor = avgDifficulty >= 8.0 ? (highAccuracy ? 0.30 : 0.18) : 0.04;
+    d = Math.max(d, cap * masteryFloor);
+  }
+  if (state.typeIndex === CURRICULUM.length - 1 && state.rating >= 90000000 && summary.finalCorrect === SET_SIZE && summary.firstCorrect >= 9 && summary.avgTime <= summary.targetTime * 1.15) {
+    d = Math.max(d, (MAX_RATE - state.rating) * 0.50);
+  }
+  return Math.round(clamp(d, -cap * 0.20, Math.max(cap * (isSkipOutcome(outcome) ? 1.46 : 1.12), d)));
 }
 
 function advance(state, outcome) {
@@ -330,14 +355,20 @@ function runLearner(model, minutes) {
     if (isKuku(centerType)) {
       const limit = centerType.kukuMode === 'extended' ? 7.2 : 5.0;
       if (typeQuestions.every((i) => i.correct) && maxTime < limit && (patternId === 'A-3' || outcome === 'kuku_skip_row')) state.learned.add(centerType.id);
-    } else if (patternId === 'A' && typeQuestions.every((i) => i.correct) && typeAvgTime <= centerType.targetSeconds * 1.20) {
-      state.learned.add(centerType.id);
-    } else if (patternId === 'C' && (outcome === 'advance' || isSkipOutcome(outcome)) && typeAllFinal && summary.finalCorrect >= 9 && summary.firstCorrect >= 9 && typeInitialRate >= 0.9 && typeAvgTime <= centerType.targetSeconds * 1.55) {
-      state.learned.add(centerType.id);
+    } else {
+      const highStage = centerType.difficulty >= 7.0;
+      const stableHighStage = highStage && typeAllFinal && summary.finalCorrect >= 9 && summary.firstCorrect >= 8 && typeInitialRate >= 0.75 && typeAvgTime <= centerType.targetSeconds * 1.75;
+      if (patternId === 'A' && ((typeQuestions.every((i) => i.correct) && typeAvgTime <= centerType.targetSeconds * 1.20) || stableHighStage)) {
+        state.learned.add(centerType.id);
+      } else if ((patternId === 'C' || highStage) && (outcome === 'advance' || isSkipOutcome(outcome) || outcome === 'stay') && (stableHighStage || (typeAllFinal && summary.finalCorrect >= 9 && summary.firstCorrect >= 9 && typeInitialRate >= 0.9 && typeAvgTime <= centerType.targetSeconds * 1.55))) {
+        state.learned.add(centerType.id);
+      }
     }
     state.rating = clamp(state.rating + delta(summary, state, outcome), 0, MAX_RATE);
     advance(state, outcome);
-    state.skill = clamp(state.skill + model.learning * (0.46 + summary.finalCorrect / SET_SIZE), 0, 0.38);
+    for (let i = 0; i < state.typeIndex; i++) state.learned.add(CURRICULUM[i].id);
+    if (state.typeIndex === CURRICULUM.length - 1 && summary.finalCorrect >= 9 && summary.firstCorrect >= 7) state.learned.add(CURRICULUM[state.typeIndex].id);
+    state.skill = clamp(state.skill + model.learning * (0.46 + summary.finalCorrect / SET_SIZE), 0, 0.46);
     elapsedMinutes += avg(items.map((i) => i.time)) * SET_SIZE / 60 + 0.45;
     sets += 1;
     if (sets > 20000) break;
