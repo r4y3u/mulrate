@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0e1d1b">
   <meta name="description" content="MulRate - かけ算の計算力を鍛えるレート制トレーニングアプリ">
-  <title>MulRate v1.0.0 beta.12</title>
+  <title>MulRate v1.0.0 beta.13</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -80,7 +80,7 @@
         <section id="learnedScreen" class="screen" aria-labelledby="learnedTitle">
           <div class="settings-card compact-card">
             <h2 id="learnedTitle">学習済み</h2>
-            <p class="muted-text">解放された類型を基本問題セットで反復します。レート加算は通常より控えめです。</p>
+            <p class="muted-text">復習ができます。もらえるレートは通常よりひかえめです。</p>
             <div id="learnedList" class="learned-list"></div>
             <div class="settings-actions">
               <button id="learnedBackButton" class="secondary-button" type="button">初期画面へ</button>
@@ -111,13 +111,13 @@
               <label><input type="radio" name="handwritingPad" value="off"> 表示しない</label>
             </fieldset>
 
-            <fieldset>
+            <fieldset id="handwritingModeFieldset">
               <legend>手書きパッドの表示方法</legend>
               <label><input type="radio" name="handwritingMode" value="layout"> レイアウト</label>
               <label><input type="radio" name="handwritingMode" value="overlay"> オーバーレイ</label>
             </fieldset>
 
-            <fieldset>
+            <fieldset id="operationOrderFieldset">
               <legend>操作盤の配置</legend>
               <label><input type="radio" name="operationOrder" value="padFirst"> 手書きパッド 上 / テンキー 下</label>
               <label><input type="radio" name="operationOrder" value="keypadFirst"> テンキー 上 / 手書きパッド 下</label>
@@ -146,7 +146,6 @@
 
     <section id="inputZone" class="input-zone" aria-label="テンキーウィンドウ">
       <div class="operation-titlebar">
-        <span id="operationStatus">テンキーウィンドウ</span>
         <button id="togglePadButton" class="mini-button" type="button">メモを開く</button>
       </div>
 

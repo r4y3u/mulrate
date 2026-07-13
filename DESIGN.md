@@ -1,4 +1,4 @@
-# MulRate v1.0.0 beta.12 DESIGN
+# MulRate v1.0.0 beta.13 DESIGN
 
 ## カリキュラム原則
 

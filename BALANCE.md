@@ -1,4 +1,4 @@
-# MulRate v1.0.0 beta.12 BALANCE
+# MulRate v1.0.0 beta.13 BALANCE
 
 ## 評価上の注意
 

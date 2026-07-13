@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const STORAGE_KEY = 'mulrate_v1_0_0_beta12_state';
+  const STORAGE_KEY = 'mulrate_v1_0_0_beta13_state';
   const MAX_RATE = 99999999;
   const SET_SIZE = 10;
   const ANSWER_EPSILON = 1e-9;
@@ -79,7 +79,8 @@
     pauseHomeButton: document.getElementById('pauseHomeButton'),
     resetDataButton: document.getElementById('resetDataButton'),
     inputZone: document.getElementById('inputZone'),
-    operationStatus: document.getElementById('operationStatus'),
+    handwritingModeFieldset: document.getElementById('handwritingModeFieldset'),
+    operationOrderFieldset: document.getElementById('operationOrderFieldset'),
     togglePadButton: document.getElementById('togglePadButton'),
     padPanel: document.getElementById('padPanel'),
     clearPadButton: document.getElementById('clearPadButton'),
@@ -91,11 +92,7 @@
   };
 
   const CURRICULUM = [
-    // 1〜16: 通常九九と、1けたをかける筆算への最小限の準備。
-    {
-      id: 'MUL_MEANING_GROUPS', label: 'かけ算の意味', point: '3×4', example: [3, 4], difficulty: 0.48, targetSeconds: 3.0,
-      generate: () => makeProblem('MUL_MEANING_GROUPS', randInt(2, 5), randInt(2, 5))
-    },
+    // 1〜15: 通常九九と、1けたをかける筆算への最小限の準備。
     ...buildKukuTypes('base', [5, 2, 3, 4, 6, 7, 8, 9, 1], range(1, 10)),
     makeKukuType(0, 'base', range(1, 10)),
     makeKukuType(10, 'base', range(1, 10)),
@@ -110,7 +107,7 @@
       generate: () => makeProblem('TENS_X_1D', randInt(2, 9) * 10, randInt(2, 9))
     },
 
-    // 17〜21: 2けた×1けた。繰り上がりと積の桁数を同時に見る。
+    // 16〜20: 2けた×1けた。繰り上がりと積の桁数を同時に見る。
     {
       id: 'M2D1_NC_P2', label: '2けた×1けた 繰り上がりなし・積2けた', point: '21×3', example: [21, 3], difficulty: 1.95, targetSeconds: 4.9,
       generate: () => generateByCondition('M2D1_NC_P2', () => [randInt(11, 49), randInt(2, 4)], ([a, b]) => countCarriesByDigit(a, b) === 0 && a * b < 100 && a % 10 !== 0)
@@ -132,7 +129,7 @@
       generate: () => makeProblem('M2D1_MIX', randInt(11, 99), randInt(2, 9))
     },
 
-    // 22〜28: 3けた×1けた。何百をかける計算から入り、積3けたと4けたを分ける。
+    // 21〜27: 3けた×1けた。何百をかける計算から入り、積3けたと4けたを分ける。
     {
       id: 'HUNDREDS_X_1D', label: '何百×1けた', point: '200×3', example: [200, 3], difficulty: 2.35, targetSeconds: 5.8,
       generate: () => makeProblem('HUNDREDS_X_1D', randInt(1, 9) * 100, randInt(2, 9))
@@ -162,12 +159,12 @@
       generate: () => makeProblem('M3D1_MIX', randInt(101, 999), randInt(2, 9))
     },
 
-    // 29〜40: 拡張九九は、1けたをかける筆算を習得してから扱う。
+    // 28〜39: 拡張九九は、1けたをかける筆算を習得してから扱う。
     ...buildKukuTypes('base', range(11, 20), range(1, 10)),
     makeKukuMixType('KUKU_MIX_11_20', '11〜20の段 混合', '16×7', range(11, 20), range(1, 10), 1.86, 4.8),
     makeKukuMixType('KUKU_MIX_0_20', '0〜20の段 混合', '18×9', range(0, 20), range(1, 10), 1.94, 5.0),
 
-    // 41〜46: 2けた・3けたの数に10、何十をかける準備。
+    // 40〜45: 2けた・3けたの数に10、何十をかける準備。
     {
       id: 'TENS_X_TENS', label: '何十×何十', point: '30×40', example: [30, 40], difficulty: 3.25, targetSeconds: 7.6,
       generate: () => makeProblem('TENS_X_TENS', randInt(2, 9) * 10, randInt(2, 9) * 10)
@@ -193,7 +190,7 @@
       generate: () => makeProblem('M3D_X_TENS', randInt(101, 999), randInt(2, 9) * 10)
     },
 
-    // 47〜56: 2けた・3けた×2けた。積の桁数別に段階化。
+    // 46〜55: 2けた・3けた×2けた。積の桁数別に段階化。
     {
       id: 'M2D2_LC_P3', label: '2けた×2けた 繰り上がり少なめ・積3けた', point: '21×13', example: [21, 13], difficulty: 4.25, targetSeconds: 12.2,
       generate: () => generateByCondition('M2D2_LC_P3', () => [randInt(11, 49), randInt(11, 29)], ([a, b]) => a * b < 1000 && countCarriesTwoDigit(a, b) <= 1)
@@ -235,11 +232,11 @@
       generate: () => makeProblem('M3D2_MIX', randInt(101, 999), randInt(11, 99))
     },
 
-    // 57〜78: 乗数11〜20の拡張は、3けた×2けたの筆算習得後に置く。
+    // 56〜77: 乗数11〜20の拡張は、3けた×2けたの筆算習得後に置く。
     ...buildKukuTypes('extended', [5, 2, 3, 4, 6, 7, 8, 9, 1, 0, 10, ...range(11, 20)], range(11, 20)),
     makeKukuMixType('KUKU_EXT_MIX_0_20_X11_20', '0〜20×11〜20 混合', '18×17', range(0, 20), range(11, 20), 3.95, 10.8),
 
-    // 79〜88: 小数の乗法。小数点は答え欄に先に表示する。
+    // 78〜87: 小数の乗法。小数点は答え欄に先に表示する。
     {
       id: 'DEC_TENTHS_LT1_X_1D', label: '0.?×1けた', point: '0.2×3', example: [0.2, 3], difficulty: 4.65, targetSeconds: 11.5,
       generate: () => makeProblem('DEC_TENTHS_LT1_X_1D', tenths(randInt(1, 9)), randInt(2, 9))
@@ -281,7 +278,7 @@
       generate: () => makeProblem('DECIMAL_MUL_MIX', Math.random() < 0.5 ? tenths(randInt(2, 99)) : hundredths(randInt(2, 999)), Math.random() < 0.5 ? tenths(randInt(2, 99)) : randInt(2, 99))
     },
 
-    // 89〜100: 学習指導要領の延長線上に置く熟達者向け段階。
+    // 88〜100: 学習指導要領の延長線上に置く熟達者向け段階。
     {
       id: 'M4D1_P4', label: '4けた×1けた・積4けた', point: '1234×2', example: [1234, 2], difficulty: 7.35, targetSeconds: 28.0,
       generate: () => generateByCondition('M4D1_P4', () => [randInt(1001, 4999), randInt(2, 4)], ([a, b]) => a * b < 10000)
@@ -325,6 +322,10 @@
     {
       id: 'DEC_X_HUNDREDTHS', label: '小数×小数第二位', point: '12.4×0.25', example: [12.4, 0.25], difficulty: 9.25, targetSeconds: 48.0,
       generate: () => makeProblem('DEC_X_HUNDREDTHS', Math.random() < 0.5 ? tenths(randInt(11, 999)) : hundredths(randInt(101, 9999)), hundredths(randInt(1, 99)))
+    },
+    {
+      id: 'M4D4_MIX', label: '4けた×4けた 積7〜8けた', point: '1234×5678', example: [1234, 5678], difficulty: 9.65, targetSeconds: 68.0,
+      generate: () => makeProblem('M4D4_MIX', randInt(1001, 9999), randInt(1001, 9999))
     },
     {
       id: 'MASTER_MUL_MIX', label: '乗法 熟達者総合', point: '1234×56', example: [1234, 56], difficulty: 9.80, targetSeconds: 60.0,
@@ -1691,8 +1692,7 @@
     const final = Math.max(0, Math.round(target || 0));
     const tick = (now) => {
       const t = clamp((now - started) / duration, 0, 1);
-      const eased = 1 - Math.pow(1 - t, 4);
-      setHomeRate(Math.round(final * eased));
+      setHomeRate(Math.round(final * t));
       if (t < 1) {
         homeRateAnimationId = requestAnimationFrame(tick);
       } else {
@@ -1736,11 +1736,21 @@
   }
 
   function applySettings() {
-    els.inputZone.classList.toggle('left', state.settings.inputSide === 'left');
-    els.inputZone.classList.toggle('overlay-mode', state.settings.handwritingMode === 'overlay');
+    const leftHanded = state.settings.inputSide === 'left';
+    const padHidden = !state.settings.handwritingPad;
+    const effectiveOverlay = padHidden || state.settings.handwritingMode === 'overlay';
+    els.app.classList.toggle('input-left', leftHanded);
+    els.inputZone.classList.toggle('left', leftHanded);
+    els.inputZone.classList.toggle('right', !leftHanded);
+    els.inputZone.classList.toggle('overlay-mode', effectiveOverlay);
     els.inputZone.classList.toggle('pad-first', state.settings.operationOrder !== 'keypadFirst');
     els.inputZone.classList.toggle('keypad-first', state.settings.operationOrder === 'keypadFirst');
-    if (!state.settings.handwritingPad) session.padCollapsed = true;
+    for (const fieldset of [els.handwritingModeFieldset, els.operationOrderFieldset]) {
+      if (!fieldset) continue;
+      fieldset.classList.toggle('settings-disabled', padHidden);
+      fieldset.querySelectorAll('input').forEach((input) => { input.disabled = padHidden; });
+    }
+    if (padHidden) session.padCollapsed = true;
     applyPadVisibility();
     renderKeypad();
     updateTopInfo();
@@ -1851,6 +1861,7 @@
 
   function applyPadVisibility() {
     const canShow = Boolean(state.settings.handwritingPad);
+    els.inputZone.classList.toggle('no-pad', !canShow);
     els.padPanel.classList.toggle('off', !canShow);
     els.togglePadButton.classList.toggle('off', !canShow);
     els.padPanel.classList.toggle('collapsed', !canShow || session.padCollapsed);
@@ -1866,7 +1877,6 @@
   function updateOperationState() {
     const active = ['playing', 'retry'].includes(session.phase) && !session.locked;
     els.inputZone.classList.toggle('answering', active);
-    els.operationStatus.textContent = active ? '入力できます' : 'テンキーウィンドウ';
   }
 
   function learnedSummaryText() {
@@ -1893,15 +1903,12 @@
     for (const typeId of state.learnedTypes) {
       const type = findType(typeId);
       if (!type) continue;
-      const item = document.createElement('div');
+      const item = document.createElement('button');
+      item.type = 'button';
       item.className = 'learned-item';
-      item.innerHTML = `<div><strong>${escapeHtml(type.label)}</strong><span>ポイント：${escapeHtml(type.point)}</span></div>`;
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'primary-button';
-      button.textContent = '反復';
-      button.addEventListener('click', () => startSet({ practiceTypeId: type.id }));
-      item.appendChild(button);
+      item.setAttribute('aria-label', `${type.label}を復習する`);
+      item.innerHTML = `<strong>${escapeHtml(type.label)}</strong><span>ポイント：${escapeHtml(type.point)}</span>`;
+      item.addEventListener('click', () => startSet({ practiceTypeId: type.id }));
       els.learnedList.appendChild(item);
     }
   }

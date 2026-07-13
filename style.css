@@ -464,3 +464,83 @@ label:has(input[type="radio"]:checked) { color: #ffffff; font-weight: 800; }
 .pad-panel {
   color: var(--text);
 }
+
+/* beta.13: handed layout, compact operation panel, accessible review cards. */
+.input-zone.left { direction: ltr; }
+.operation-titlebar { justify-content: flex-end; min-height: 32px; }
+.input-zone.left .operation-titlebar { justify-content: flex-start; }
+
+.learned-item {
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr) auto;
+  color: var(--text);
+  cursor: pointer;
+  transition: transform 100ms ease, background 120ms ease, border-color 120ms ease;
+}
+.learned-item strong { min-width: 0; text-align: left; }
+.learned-item span { white-space: nowrap; text-align: right; }
+.learned-item:hover,
+.learned-item:focus-visible {
+  background: rgba(120, 197, 171, 0.18);
+  border-color: rgba(152, 224, 183, 0.55);
+  outline: none;
+}
+.learned-item:active { transform: translateY(1px) scale(0.995); }
+
+.settings-disabled {
+  opacity: 0.42;
+  filter: saturate(0.4);
+}
+.settings-disabled label,
+.settings-disabled input { cursor: not-allowed; }
+
+/* An overlay must fully cover the keypad text beneath it. */
+.input-zone.overlay-mode #padPanel {
+  background: #173b33;
+  border-color: rgba(244, 251, 245, 0.34);
+}
+.input-zone.overlay-mode .pad-toolbar { background: #173b33; }
+.input-zone.overlay-mode canvas { background: #f2efe0; }
+
+/* Remove unused keypad space and give the keys the available height. */
+.keypad.topLeft,
+.keypad.pseudo { align-content: stretch; }
+.keypad.topLeft { grid-template-rows: repeat(4, minmax(0, 1fr)); }
+.keypad.pseudo { grid-template-rows: repeat(3, minmax(0, 1fr)); }
+.keypad.topLeft .key,
+.keypad.pseudo .key { min-height: 0; }
+
+.screen { -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+
+@media (min-width: 760px) and (orientation: landscape) {
+  .app-shell.input-left { grid-template-columns: minmax(360px, 44%) 1fr; }
+  .app-shell.input-left .input-zone { grid-column: 1; grid-row: 1; }
+  .app-shell.input-left .nav-window { grid-column: 2; grid-row: 1; }
+}
+
+@media (max-width: 759px), (orientation: portrait) {
+  .app-shell {
+    grid-template-rows: minmax(0, 44fr) minmax(0, 56fr);
+  }
+  .input-zone {
+    grid-template-rows: 32px auto minmax(0, 1fr);
+    padding: 6px;
+    gap: 6px;
+  }
+  .input-zone.keypad-first { grid-template-rows: 32px minmax(0, 1fr) auto; }
+  .keypad-panel { padding: 6px; }
+  .key-hint { margin-bottom: 5px; padding-block: 5px; }
+}
+
+@media (max-width: 430px) {
+  .learned-item { grid-template-columns: 1fr; gap: 3px; }
+  .learned-item span { text-align: left; }
+  .operation-titlebar { min-height: 30px; }
+  .input-zone.overlay-mode { grid-template-rows: 30px minmax(0, 1fr); }
+  .input-zone.overlay-mode #padPanel { top: 36px; left: 6px; right: 6px; bottom: 6px; }
+  .keypad.normal { gap: 5px; }
+  .keypad.normal .key { font-size: clamp(1.45rem, 5.4dvh, 2.2rem); }
+}
+.input-zone.no-pad { grid-template-rows: minmax(0, 1fr); }
+.input-zone.no-pad .operation-titlebar { display: none; }
+.input-zone.no-pad #keypadPanel { grid-row: 1; }

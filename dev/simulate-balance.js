@@ -74,7 +74,6 @@ function mixType(id, label, difficulty, targetSeconds) {
 
 
 const CURRICULUM = [
-  mixType('MUL_MEANING_GROUPS', 'かけ算の意味', 0.48, 3.0),
   ...buildKukuTypes('base', [5, 2, 3, 4, 6, 7, 8, 9, 1, 0, 10]),
   mixType('KUKU_MIX_1_9', '九九 1〜9混合', 1.42, 3.2),
   mixType('KUKU_MIX_0_10', '0〜10の段 混合', 1.55, 3.6),
@@ -134,6 +133,7 @@ const CURRICULUM = [
   mixType('M4D3_P6', '4けた×3けた・積6けた', 9.10, 52.0),
   mixType('M4D3_P7', '4けた×3けた・積7けた', 9.40, 58.0),
   mixType('DEC_X_HUNDREDTHS', '小数×小数第二位', 9.25, 48.0),
+  mixType('M4D4_MIX', '4けた×4けた 積7〜8けた', 9.65, 68.0),
   mixType('MASTER_MUL_MIX', '乗法 熟達者総合', 9.80, 60.0)
 ];
 
