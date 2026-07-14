@@ -770,3 +770,222 @@ label:has(input[type="radio"]:checked) { color: #ffffff; font-weight: 800; }
   .key-hint { padding-inline: 6px; }
   .input-zone.pad-open.overlay-mode #padPanel { top: 6px; left: 6px; right: 6px; bottom: 6px; }
 }
+
+/* beta.17: nav-window handwriting mode, stronger touch protection, and keypad click feel. */
+html,
+body,
+.app-shell,
+.nav-window,
+.input-zone,
+.pad-panel,
+.keypad-panel,
+canvas {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.nav-pad-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.nav-pad-controls.off { display: none !important; }
+.input-zone.pad-nav-active .operation-titlebar {
+  display: flex !important;
+}
+.input-zone.pad-nav-active .operation-titlebar {
+  justify-content: flex-end;
+}
+.input-zone.left.pad-nav-active .operation-titlebar {
+  justify-content: flex-start;
+}
+
+/* The input window is now always: control strip + keypad. Handwriting floats over either window. */
+.input-zone {
+  grid-template-rows: 36px minmax(0, 1fr) !important;
+}
+.input-zone.no-pad {
+  grid-template-rows: minmax(0, 1fr) !important;
+}
+.input-zone.no-pad .operation-titlebar { display: none !important; }
+.input-zone #keypadPanel { grid-row: 2; }
+.input-zone.no-pad #keypadPanel { grid-row: 1; }
+
+.nav-window > #padPanel.nav-pad-panel {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 62px;
+  bottom: 10px;
+  z-index: 35;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  background: #173b33;
+  border-color: rgba(244, 251, 245, 0.34);
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.26);
+}
+.nav-window > #padPanel.nav-pad-panel.collapsed { display: none; }
+#padPanel.nav-pad-panel .pad-toolbar { display: none; }
+#padPanel.nav-pad-panel canvas {
+  min-height: 180px;
+  border-radius: calc(var(--radius-lg) - 2px);
+}
+#padPanel.keypad-pad-panel {
+  grid-template-rows: 38px minmax(0, 1fr);
+}
+#padPanel.keypad-pad-panel canvas { min-height: 120px; }
+
+canvas {
+  touch-action: none;
+  -ms-touch-action: none;
+}
+.key.pressed {
+  transform: translateY(3px) scale(0.978);
+  background: #ddebe3;
+  box-shadow: inset 0 4px 0 rgba(24, 32, 43, 0.16);
+}
+
+@media (max-width: 759px), (orientation: portrait) {
+  .app-shell.window-keypad-first {
+    grid-template-rows: minmax(0, 56fr) minmax(0, 44fr);
+  }
+  .app-shell.window-keypad-first .input-zone { grid-row: 1; }
+  .app-shell.window-keypad-first .nav-window { grid-row: 2; }
+  .app-shell.window-keypad-first.screen-game {
+    grid-template-rows: minmax(0, 52fr) minmax(0, 48fr);
+  }
+  .nav-window > #padPanel.nav-pad-panel {
+    left: 8px;
+    right: 8px;
+    top: 58px;
+    bottom: 8px;
+  }
+  #padPanel.nav-pad-panel canvas { min-height: 150px; }
+  .input-zone.pad-nav-active .operation-titlebar { min-height: 32px; }
+}
+
+@media (max-width: 430px) {
+  .nav-window > #padPanel.nav-pad-panel {
+    left: 6px;
+    right: 6px;
+    top: 56px;
+    bottom: 6px;
+  }
+  .nav-pad-controls .mini-button { min-height: 30px; padding-inline: 11px; }
+}
+
+/* beta.18: persistent handwriting workspace and input echo near memo controls. */
+.input-echo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  max-width: min(46vw, 12em);
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(244, 251, 245, 0.08);
+  border: 1px solid rgba(244, 251, 245, 0.13);
+  color: rgba(244, 251, 245, 0.82);
+  font-size: clamp(0.72rem, 2.2vw, 0.86rem);
+  font-weight: 850;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.input-echo.empty { color: rgba(244, 251, 245, 0.50); }
+.input-echo.off { display: none !important; }
+.nav-pad-title {
+  color: var(--muted);
+  font-weight: 860;
+  white-space: nowrap;
+  margin-right: auto;
+}
+.nav-pad-title.off { display: none !important; }
+.input-zone .operation-titlebar {
+  justify-content: flex-end;
+}
+.input-zone.pad-nav-active .operation-titlebar {
+  gap: 8px;
+}
+.input-zone.pad-nav-active .nav-pad-title {
+  order: 1;
+}
+.input-zone.pad-nav-active #inputEcho {
+  order: 2;
+}
+.input-zone.pad-nav-active #navPadControls {
+  order: 3;
+}
+.input-zone.left.pad-nav-active .operation-titlebar {
+  justify-content: flex-start;
+}
+.input-zone.left.pad-nav-active #navPadControls {
+  order: 1;
+}
+.input-zone.left.pad-nav-active #inputEcho {
+  order: 2;
+}
+.input-zone.left.pad-nav-active .nav-pad-title {
+  order: 3;
+  margin-right: 0;
+  margin-left: auto;
+}
+.input-zone.left:not(.pad-nav-active) .operation-titlebar {
+  justify-content: flex-start;
+}
+.input-zone.left:not(.pad-nav-active) #togglePadButton { order: 1; }
+.input-zone.left:not(.pad-nav-active) #inputEcho { order: 2; }
+.input-zone.left:not(.pad-nav-active) .nav-pad-title { display: none; }
+.input-zone:not(.left):not(.pad-nav-active) .nav-pad-title { display: none; }
+.input-zone:not(.left):not(.pad-nav-active) #inputEcho { order: 1; }
+.input-zone:not(.left):not(.pad-nav-active) #togglePadButton { order: 2; }
+.pad-toolbar .pad-title {
+  white-space: nowrap;
+}
+.pad-actions {
+  align-items: center;
+}
+.input-zone.left .pad-toolbar {
+  flex-direction: row-reverse;
+}
+.input-zone.left .pad-actions {
+  flex-direction: row;
+}
+.input-zone.left .pad-title {
+  margin-left: auto;
+  text-align: right;
+}
+.input-zone:not(.left) .pad-actions {
+  margin-left: auto;
+}
+.input-zone:not(.left) .pad-title {
+  margin-right: auto;
+}
+#padPanel.keypad-pad-panel .pad-toolbar {
+  gap: 8px;
+}
+#padPanel.keypad-pad-panel .input-echo {
+  max-width: min(38vw, 11em);
+}
+@media (max-width: 430px) {
+  .input-echo {
+    min-height: 26px;
+    padding: 0 8px;
+    max-width: 34vw;
+    font-size: clamp(0.66rem, 2.7vw, 0.78rem);
+  }
+  .input-zone.pad-nav-active .operation-titlebar {
+    gap: 5px;
+  }
+  .nav-pad-title {
+    font-size: 0.76rem;
+  }
+  #padPanel.keypad-pad-panel .pad-toolbar {
+    padding-inline: 8px;
+  }
+  #padPanel.keypad-pad-panel .input-echo {
+    max-width: 30vw;
+  }
+}

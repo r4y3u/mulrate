@@ -2,10 +2,10 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#0e1d1b">
   <meta name="description" content="MulRate - かけ算の計算力を鍛えるレート制トレーニングアプリ">
-  <title>MulRate v1.0.0 beta.16</title>
+  <title>MulRate v1.0.0 beta.18</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -114,14 +114,14 @@
 
             <fieldset id="handwritingModeFieldset">
               <legend>手書きパッドの表示方法</legend>
-              <label><input type="radio" name="handwritingMode" value="layout"> レイアウト</label>
-              <label><input type="radio" name="handwritingMode" value="overlay"> オーバーレイ</label>
+              <label><input type="radio" name="handwritingMode" value="layout"> ナビウィンドウ上</label>
+              <label><input type="radio" name="handwritingMode" value="overlay"> キーパッド上</label>
             </fieldset>
 
             <fieldset id="operationOrderFieldset">
               <legend>操作盤の配置</legend>
-              <label><input type="radio" name="operationOrder" value="padFirst"> 手書きパッド 上 / テンキー 下</label>
-              <label><input type="radio" name="operationOrder" value="keypadFirst"> テンキー 上 / 手書きパッド 下</label>
+              <label><input type="radio" name="operationOrder" value="padFirst"> ナビウィンドウ 上 / テンキー 下</label>
+              <label><input type="radio" name="operationOrder" value="keypadFirst"> テンキー 上 / ナビウィンドウ 下</label>
             </fieldset>
 
             <fieldset>
@@ -147,18 +147,25 @@
 
     <section id="inputZone" class="input-zone" aria-label="テンキーウィンドウ">
       <div class="operation-titlebar">
+        <span id="navPadTitle" class="nav-pad-title">手書きパッド</span>
+        <span id="inputEcho" class="input-echo" aria-live="polite">入力：—</span>
         <button id="togglePadButton" class="mini-button" type="button">メモを開く</button>
+        <div id="navPadControls" class="nav-pad-controls off">
+          <button id="navClearPadButton" class="mini-button" type="button">消す</button>
+          <button id="navClosePadButton" class="mini-button" type="button">閉じる</button>
+        </div>
       </div>
 
       <div id="padPanel" class="pad-panel collapsed">
         <div class="pad-toolbar">
-          <span>手書きパッド</span>
+          <span class="pad-title">手書きパッド</span>
           <div class="pad-actions">
+            <span id="padInputEcho" class="input-echo" aria-live="polite">入力：—</span>
             <button id="clearPadButton" class="mini-button" type="button">消す</button>
             <button id="closePadButton" class="mini-button" type="button">閉じる</button>
           </div>
         </div>
-        <canvas id="scratchPad" width="900" height="280" aria-label="筆算やメモを書く手書きパッド"></canvas>
+        <canvas id="scratchPad" width="900" height="420" aria-label="筆算やメモを書く手書きパッド"></canvas>
       </div>
 
       <div id="keypadPanel" class="keypad-panel">

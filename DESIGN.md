@@ -1,18 +1,17 @@
-# MulRate v1.0.0 beta.16 Design Notes
+# DESIGN beta.18
 
-## UI
+## 基本方針
 
-- Main display uses a low-glare green board surface with white text.
-- On small screens, the game screen prioritizes showing the formula and answer field without scrolling.
-- The input zone keeps keypad hints to one compact line to preserve button height.
-- When the handwriting pad is open, the external memo toggle is hidden because the pad already has its own close button.
+- 思考を邪魔しない。
+- 視覚の負荷を最小限にする。
+- 入力感、正誤感、筆算支援などの感覚を補助する。
 
-## Feedback
+## beta.18での確認観点
 
-- Correct answers use a calm green bloom and answer-field emphasis. The check mark was removed to preserve formula visibility.
-- Wrong answers use a restrained answer-field and formula nudge. The goal is to notify without making errors attractive.
+スマホでは、手書きパッドを開いたまま次問へ進めることで、筆算を多用する学習者のスクロール・開閉負担を減らした。入力済み数字は操作ボタンの近くに小さく表示し、数式や筆算領域を圧迫しない。
 
-## Handwriting pad
+PC・タブレットでは、左右配置と左手用・右手用の整合を優先した。入力ボタンやパッドの情報は必要最小限にとどめ、メインの問題・答え欄・筆算領域を主役にしている。
 
-- The pad preloads a vertical multiplication setup showing only the multiplicand and multiplier.
-- Clearing the pad removes user strokes and redraws the original setup.
+## 注意
+
+iOSの消音モードはWebアプリ側から完全には制御できない。音はユーザー操作後のWeb Audioで可能な範囲で鳴らす。

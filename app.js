@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const STORAGE_KEY = 'mulrate_v1_0_0_beta16_state';
+  const STORAGE_KEY = 'mulrate_v1_0_0_beta18_state';
   const MAX_RATE = 99999999;
   const SET_SIZE = 10;
   const ANSWER_EPSILON = 1e-9;
@@ -92,7 +92,13 @@
     scratchPad: document.getElementById('scratchPad'),
     keypadPanel: document.getElementById('keypadPanel'),
     keypad: document.getElementById('keypad'),
-    keyHint: document.getElementById('keyHint')
+    keyHint: document.getElementById('keyHint'),
+    navPadControls: document.getElementById('navPadControls'),
+    navClearPadButton: document.getElementById('navClearPadButton'),
+    navClosePadButton: document.getElementById('navClosePadButton'),
+    inputEcho: document.getElementById('inputEcho'),
+    padInputEcho: document.getElementById('padInputEcho'),
+    navPadTitle: document.getElementById('navPadTitle')
   };
 
   const CURRICULUM = [
@@ -769,7 +775,8 @@
     session.phase = 'playing';
     session.practiceMode = Boolean(practiceTypeId);
     session.practiceTypeId = practiceTypeId;
-    session.padCollapsed = state.settings.handwritingMode === 'overlay';
+    // 手書きパッドは、必要なときに明示的に開く。
+    session.padCollapsed = true;
     session.questions = plans.map((plan) => createProblemFromPlan(plan, used));
     session.currentIndex = 0;
     session.input = '';
@@ -1499,6 +1506,7 @@
       els.answerDisplay.classList.remove('decimal-answer');
       els.answerDisplay.textContent = '\u00a0';
     }
+    updateInputEcho();
   }
 
   function renderAnswerSlots(value, problem) {
@@ -1525,11 +1533,35 @@
     const decimal = Boolean(problem && isDecimalAnswer(problem));
     els.answerDisplay.classList.toggle('decimal-answer', decimal);
     els.answerDisplay.innerHTML = renderAnswerSlots(value, problem);
+    updateInputEcho();
     if (['playing', 'retry'].includes(session.phase) && !session.locked) {
       els.answerDisplay.classList.remove('pulse');
       void els.answerDisplay.offsetWidth;
       els.answerDisplay.classList.add('pulse');
       window.setTimeout(() => els.answerDisplay.classList.remove('pulse'), 150);
+    }
+  }
+
+  function formatInputEcho() {
+    const problem = activeInputProblem();
+    if (!['playing', 'retry'].includes(session.phase) || !problem) return '';
+    const raw = String(session.input || '').replace(/[^0-9]/g, '');
+    if (!raw) return '入力：—';
+    if (!isDecimalAnswer(problem)) return `入力：${raw}`;
+    const spec = answerSpec(problem.answer);
+    const digits = raw.slice(0, spec.totalDigits);
+    const whole = digits.slice(0, spec.integerDigits).padEnd(spec.integerDigits, '□');
+    const frac = digits.slice(spec.integerDigits).padEnd(spec.decimalPlaces, '□');
+    return `入力：${whole}.${frac}`;
+  }
+
+  function updateInputEcho() {
+    const text = formatInputEcho();
+    for (const el of [els.inputEcho, els.padInputEcho]) {
+      if (!el) continue;
+      el.textContent = text;
+      el.classList.toggle('empty', !text || text.endsWith('—'));
+      el.classList.toggle('off', !text);
     }
   }
 
@@ -1613,6 +1645,7 @@
       button.addEventListener('pointerdown', (event) => {
         event.preventDefault();
         flashKey(key.action);
+        beep('click');
         handleInput(key.action);
       });
       els.keypad.appendChild(button);
@@ -1672,6 +1705,7 @@
     if (!mapped) return;
     event.preventDefault();
     flashKey(mapped);
+    beep('click');
     handleInput(mapped);
   }
 
@@ -1785,26 +1819,45 @@
   function applySettings() {
     const leftHanded = state.settings.inputSide === 'left';
     const padHidden = !state.settings.handwritingPad;
-    const effectiveOverlay = padHidden || state.settings.handwritingMode === 'overlay';
+    const navPadMode = !padHidden && state.settings.handwritingMode === 'layout';
+    const keypadPadMode = !padHidden && state.settings.handwritingMode === 'overlay';
     els.app.classList.toggle('input-left', leftHanded);
+    els.app.classList.toggle('window-keypad-first', state.settings.operationOrder === 'keypadFirst');
+    els.app.classList.toggle('pad-nav-mode', navPadMode);
     els.inputZone.classList.toggle('left', leftHanded);
     els.inputZone.classList.toggle('right', !leftHanded);
-    els.inputZone.classList.toggle('overlay-mode', effectiveOverlay);
-    els.inputZone.classList.toggle('pad-first', state.settings.operationOrder !== 'keypadFirst');
-    els.inputZone.classList.toggle('keypad-first', state.settings.operationOrder === 'keypadFirst');
+    els.inputZone.classList.toggle('overlay-mode', keypadPadMode);
+    els.inputZone.classList.remove('pad-first', 'keypad-first');
+    movePadToCurrentHost();
     if (els.handwritingModeFieldset) {
       els.handwritingModeFieldset.classList.toggle('settings-disabled', padHidden);
       els.handwritingModeFieldset.querySelectorAll('input').forEach((input) => { input.disabled = padHidden; });
     }
     if (els.operationOrderFieldset) {
-      const disableOrder = padHidden || effectiveOverlay;
-      els.operationOrderFieldset.classList.toggle('settings-disabled', disableOrder);
-      els.operationOrderFieldset.querySelectorAll('input').forEach((input) => { input.disabled = disableOrder; });
+      els.operationOrderFieldset.classList.remove('settings-disabled');
+      els.operationOrderFieldset.querySelectorAll('input').forEach((input) => { input.disabled = false; });
     }
     if (padHidden) session.padCollapsed = true;
     applyPadVisibility();
     renderKeypad();
     updateTopInfo();
+  }
+
+  function isNavPadMode() {
+    return Boolean(state.settings.handwritingPad && state.settings.handwritingMode === 'layout');
+  }
+
+  function movePadToCurrentHost() {
+    if (!els.padPanel) return;
+    if (isNavPadMode()) {
+      if (els.padPanel.parentElement !== els.navWindow) els.navWindow.appendChild(els.padPanel);
+      return;
+    }
+    if (els.padPanel.parentElement !== els.inputZone) {
+      els.inputZone.insertBefore(els.padPanel, els.keypadPanel);
+    } else if (els.keypadPanel && els.padPanel.nextElementSibling !== els.keypadPanel) {
+      els.inputZone.insertBefore(els.padPanel, els.keypadPanel);
+    }
   }
 
   function resetData() {
@@ -1865,25 +1918,38 @@
     return `${negative ? '-' : ''}${parts.join('\u2009')}`;
   }
 
+  function ensureAudioContext() {
+    const AudioCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtor) return null;
+    audioContext ||= new AudioCtor();
+    if (audioContext.state === 'suspended') {
+      audioContext.resume().catch(() => {});
+    }
+    return audioContext;
+  }
+
   function beep(type) {
     if (!state.settings.sound) return;
     try {
-      audioContext ||= new (window.AudioContext || window.webkitAudioContext)();
-      const playTone = (frequency, startOffset, duration, volume) => {
-        const oscillator = audioContext.createOscillator();
-        const gain = audioContext.createGain();
-        const start = audioContext.currentTime + startOffset;
-        oscillator.type = 'sine';
+      const ctx = ensureAudioContext();
+      if (!ctx) return;
+      const playTone = (frequency, startOffset, duration, volume, wave = 'sine') => {
+        const oscillator = ctx.createOscillator();
+        const gain = ctx.createGain();
+        const start = ctx.currentTime + startOffset;
+        oscillator.type = wave;
         oscillator.frequency.value = frequency;
         gain.gain.setValueAtTime(0.0001, start);
-        gain.gain.exponentialRampToValueAtTime(volume, start + 0.012);
+        gain.gain.exponentialRampToValueAtTime(volume, start + 0.006);
         gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
         oscillator.connect(gain);
-        gain.connect(audioContext.destination);
+        gain.connect(ctx.destination);
         oscillator.start(start);
-        oscillator.stop(start + duration + 0.02);
+        oscillator.stop(start + duration + 0.018);
       };
-      if (type === 'ok') {
+      if (type === 'click') {
+        playTone(620, 0, 0.035, 0.018, 'square');
+      } else if (type === 'ok') {
         playTone(740, 0, 0.085, 0.045);
         playTone(990, 0.075, 0.105, 0.050);
       } else {
@@ -1937,14 +2003,25 @@
   }
 
   function applyPadVisibility() {
+    movePadToCurrentHost();
     const canShow = Boolean(state.settings.handwritingPad);
+    const navMode = isNavPadMode();
+    const keypadMode = canShow && state.settings.handwritingMode === 'overlay';
     const isOpen = canShow && !session.padCollapsed;
+    els.app.classList.toggle('pad-nav-open', isOpen && navMode);
+    els.app.classList.toggle('pad-keypad-open', isOpen && keypadMode);
     els.inputZone.classList.toggle('no-pad', !canShow);
     els.inputZone.classList.toggle('pad-open', isOpen);
+    els.inputZone.classList.toggle('pad-nav-active', isOpen && navMode);
     els.padPanel.classList.toggle('off', !canShow);
+    els.padPanel.classList.toggle('nav-pad-panel', navMode);
+    els.padPanel.classList.toggle('keypad-pad-panel', keypadMode);
     els.togglePadButton.classList.toggle('off', !canShow || isOpen);
+    els.navPadControls?.classList.toggle('off', !canShow || !isOpen || !navMode);
+    els.navPadTitle?.classList.toggle('off', !canShow || !isOpen || !navMode);
     els.padPanel.classList.toggle('collapsed', !canShow || session.padCollapsed);
     els.togglePadButton.textContent = session.padCollapsed ? 'メモを開く' : '';
+    updateInputEcho();
   }
 
   function togglePad(force) {
@@ -1999,7 +2076,7 @@
     const ctx = canvas.getContext('2d');
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    ctx.lineWidth = 5;
+    ctx.lineWidth = 8;
     ctx.strokeStyle = '#18202b';
 
     const getPoint = (event) => {
@@ -2011,6 +2088,11 @@
         y: (event.clientY - rect.top) * scaleY
       };
     };
+
+    canvas.addEventListener('contextmenu', (event) => event.preventDefault());
+    canvas.addEventListener('dblclick', (event) => event.preventDefault());
+    canvas.addEventListener('selectstart', (event) => event.preventDefault());
+    canvas.addEventListener('gesturestart', (event) => event.preventDefault());
 
     canvas.addEventListener('pointerdown', (event) => {
       event.preventDefault();
@@ -2057,25 +2139,26 @@
     const left = formatOperand(problem.left);
     const right = formatOperand(problem.right);
     const longest = Math.max(left.length, right.length + 2);
-    const fontSize = longest >= 8 ? 36 : longest >= 6 ? 42 : 48;
-    const lineHeight = Math.round(fontSize * 1.22);
-    const blockWidth = Math.min(canvas.width * 0.42, Math.max(190, longest * fontSize * 0.72 + 54));
-    const x = Math.min(canvas.width - 36, Math.max(blockWidth, 215));
-    const y = Math.max(56, fontSize + 18);
+    const fontSize = longest >= 9 ? 46 : longest >= 7 ? 54 : 66;
+    const lineHeight = Math.round(fontSize * 1.30);
+    const blockWidth = Math.min(canvas.width * 0.58, Math.max(230, longest * fontSize * 0.70 + 64));
+    const ratio = state.settings.inputSide === 'left' ? 0.40 : 0.70;
+    const x = clamp(canvas.width * ratio, blockWidth + 24, canvas.width - 48);
+    const y = Math.max(62, fontSize + 18);
 
     ctx.save();
-    ctx.font = `800 ${fontSize}px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
-    ctx.fillStyle = 'rgba(16, 43, 37, 0.50)';
-    ctx.strokeStyle = 'rgba(16, 43, 37, 0.30)';
-    ctx.lineWidth = 3;
+    ctx.font = `900 ${fontSize}px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+    ctx.fillStyle = 'rgba(16, 43, 37, 0.58)';
+    ctx.strokeStyle = 'rgba(16, 43, 37, 0.36)';
+    ctx.lineWidth = 5;
     ctx.lineCap = 'round';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'alphabetic';
     ctx.fillText(left, x, y);
     ctx.fillText(`× ${right}`, x, y + lineHeight);
     ctx.beginPath();
-    ctx.moveTo(x - blockWidth + 18, y + lineHeight + 14);
-    ctx.lineTo(x + 8, y + lineHeight + 14);
+    ctx.moveTo(x - blockWidth + 18, y + lineHeight + 18);
+    ctx.lineTo(x + 10, y + lineHeight + 18);
     ctx.stroke();
     ctx.restore();
   }
@@ -2094,9 +2177,13 @@
     });
     els.resetDataButton.addEventListener('click', resetData);
     els.clearPadButton.addEventListener('click', clearPad);
+    els.navClearPadButton?.addEventListener('click', clearPad);
     els.togglePadButton.addEventListener('click', () => togglePad());
     els.closePadButton.addEventListener('click', () => togglePad(false));
+    els.navClosePadButton?.addEventListener('click', () => togglePad(false));
+    window.addEventListener('pointerdown', () => { if (state.settings.sound) ensureAudioContext(); }, { passive: true });
     window.addEventListener('keydown', handleKeyboard);
+    document.addEventListener('gesturestart', (event) => event.preventDefault());
   }
 
   function init() {

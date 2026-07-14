@@ -1,15 +1,5 @@
-# MulRate v1.0.0 beta.16 Balance Notes
+# BALANCE beta.18
 
-The beta.15 rate curve was kept as the base. beta.16 adds a written-work grace factor for problems where many learners are expected to use written calculation.
+beta.18ではレート計算・進行判定・カリキュラムを変更していない。
 
-## Written-work grace
-
-The stored curriculum target seconds are unchanged. For progress and rate calculations, an effective target is used:
-
-- 2-digit/3-digit × 2-digit: x1.18
-- Decimal multiplication: x1.12 to x1.18
-- Advanced 4-digit / 3-digit multiplier stages: x1.28
-- Other stages with difficulty 4.0+: x1.12
-- Kuku stages: unchanged
-
-This reduces excessive penalty from handwriting and written calculation without making careless fast answers more valuable.
+beta.16/17系で調整した、Fモデル100時間で最大値付近・学習済み100段階、かつD/E/Fのバランスを保つ設計を維持する。
