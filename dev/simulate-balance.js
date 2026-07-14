@@ -150,6 +150,18 @@ const LEARNERS = [
 ];
 
 function isKuku(type) { return type.family === 'kuku'; }
+
+function writtenGraceForType(type) {
+  if (!type || isKuku(type)) return 1;
+  const id = type.id || '';
+  if (id.startsWith('M2D2') || id.startsWith('M3D2')) return 1.18;
+  if (id.startsWith('M4D') || id.startsWith('M2D3') || id.startsWith('M3D3') || id === 'M4D4_MIX' || id === 'MASTER_MUL_MIX') return 1.28;
+  if (id.startsWith('DEC_') || id.startsWith('WHOLE_X_DEC') || id === 'DECIMAL_MUL_MIX') return type.difficulty >= 6 ? 1.18 : 1.12;
+  if (type.difficulty >= 4.0) return 1.12;
+  return 1;
+}
+function effectiveTarget(type) { return (type?.targetSeconds || 5) * writtenGraceForType(type); }
+
 function maxPatternIndex(typeIndex) { return isKuku(CURRICULUM[typeIndex]) ? 2 : 5; }
 function currentPatternId(state) { const idx = clamp(state.patternIndex, 0, maxPatternIndex(state.typeIndex)); return isKuku(CURRICULUM[state.typeIndex]) ? KUKU_PATTERNS[idx].id : PATTERNS[idx].id; }
 function isSkipOutcome(outcome) { return ['skip', 'kuku_skip_to_random', 'kuku_skip_row'].includes(outcome); }
@@ -234,7 +246,7 @@ function delta(summary, state, outcome) {
   const possible = summary.items.reduce((sum, item) => sum + 1.25 * item.type.difficulty, 0);
   const achievedRaw = summary.items.reduce((sum, item) => {
     const result = item.correct ? 1 : item.retryCorrect ? 0.45 : 0;
-    return sum + result * speedFactor(item.time, item.type.targetSeconds) * item.type.difficulty;
+    return sum + result * speedFactor(item.time, effectiveTarget(item.type)) * item.type.difficulty;
   }, 0);
   const achieved = achievedRaw * initialAccuracyFactor(summary);
   const ratio = possible ? achieved / possible : 0;
@@ -339,7 +351,7 @@ function runLearner(model, minutes) {
       firstCorrect: items.filter((i) => i.correct).length,
       finalCorrect: items.filter((i) => i.correct || i.retryCorrect).length,
       avgTime: avg(items.map((i) => i.time)),
-      targetTime: avg(items.map((i) => i.type.targetSeconds))
+      targetTime: avg(items.map((i) => effectiveTarget(i.type)))
     };
     const outcome = judge(summary, state);
     if (isSkipOutcome(outcome)) state.skips += 1;
@@ -357,10 +369,10 @@ function runLearner(model, minutes) {
       if (typeQuestions.every((i) => i.correct) && maxTime < limit && (patternId === 'A-3' || outcome === 'kuku_skip_row')) state.learned.add(centerType.id);
     } else {
       const highStage = centerType.difficulty >= 7.0;
-      const stableHighStage = highStage && typeAllFinal && summary.finalCorrect >= 9 && summary.firstCorrect >= 8 && typeInitialRate >= 0.75 && typeAvgTime <= centerType.targetSeconds * 1.75;
-      if (patternId === 'A' && ((typeQuestions.every((i) => i.correct) && typeAvgTime <= centerType.targetSeconds * 1.20) || stableHighStage)) {
+      const stableHighStage = highStage && typeAllFinal && summary.finalCorrect >= 9 && summary.firstCorrect >= 8 && typeInitialRate >= 0.75 && typeAvgTime <= effectiveTarget(centerType) * 1.75;
+      if (patternId === 'A' && ((typeQuestions.every((i) => i.correct) && typeAvgTime <= effectiveTarget(centerType) * 1.20) || stableHighStage)) {
         state.learned.add(centerType.id);
-      } else if ((patternId === 'C' || highStage) && (outcome === 'advance' || isSkipOutcome(outcome) || outcome === 'stay') && (stableHighStage || (typeAllFinal && summary.finalCorrect >= 9 && summary.firstCorrect >= 9 && typeInitialRate >= 0.9 && typeAvgTime <= centerType.targetSeconds * 1.55))) {
+      } else if ((patternId === 'C' || highStage) && (outcome === 'advance' || isSkipOutcome(outcome) || outcome === 'stay') && (stableHighStage || (typeAllFinal && summary.finalCorrect >= 9 && summary.firstCorrect >= 9 && typeInitialRate >= 0.9 && typeAvgTime <= effectiveTarget(centerType) * 1.55))) {
         state.learned.add(centerType.id);
       }
     }

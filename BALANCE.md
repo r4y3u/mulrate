@@ -1,20 +1,15 @@
-# MulRate v1.0.0 beta.15 BALANCE
+# MulRate v1.0.0 beta.16 Balance Notes
 
-## 調整方針
+The beta.15 rate curve was kept as the base. beta.16 adds a written-work grace factor for problems where many learners are expected to use written calculation.
 
-F「得意・高速安定型」が100時間で最大レート `99999999` と学習済み100段階に到達することを目標にした。
+## Written-work grace
 
-一方で、D「高速・ケアレス型」がFを上回らないよう、初回正答数による補正は維持した。E「慎重・高正答型」は、短期ではDより低く、中長期では正確性により伸びる設計を維持している。
+The stored curriculum target seconds are unchanged. For progress and rate calculations, an effective target is used:
 
-## 主要変更
+- 2-digit/3-digit × 2-digit: x1.18
+- Decimal multiplication: x1.12 to x1.18
+- Advanced 4-digit / 3-digit multiplier stages: x1.28
+- Other stages with difficulty 4.0+: x1.12
+- Kuku stages: unchanged
 
-- `RATE_INFLATION_BASE`: 4200 → 5200
-- `RATE_CAP_BASE`: 18500 → 26000
-- 高難度平均に応じた終盤倍率を追加
-- 高難度帯ではレート抑制をやや弱める
-- 高難度で足止め中でも、最終全問正解なら一定の加点を保証
-- 最終段階で高速・高正答かつ9000万超の場合、最大値へ収束する補正を追加
-
-## 注意
-
-この調整により、100時間時点ではD/E/Gなども学習済み100に近づく。差は学習済み数よりレートで表れる。
+This reduces excessive penalty from handwriting and written calculation without making careless fast answers more valuable.

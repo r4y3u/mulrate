@@ -1,13 +1,18 @@
-# MulRate v1.0.0 beta.15 DESIGN
-
-## カリキュラム原則
-
-1. 通常九九と位取りの基礎だけで、1けたをかける筆算へ進む。
-2. 拡張九九は筆算習得後に置き、未習知識が導入時のノイズにならないようにする。
-3. 筆算類型は、繰り上がりの回数だけでなく積の桁数でも分ける。
-4. 89〜100は学習指導要領の延長線上にある熟達者向け領域とする。
-5. 小数点は入力させず、答え欄側で位置を示す。
+# MulRate v1.0.0 beta.16 Design Notes
 
 ## UI
 
-主表示領域は低輝度の緑地に白文字を基本とし、背景色だけに頼らず、問題・レート・進行情報を同じ低刺激面にまとめる。
+- Main display uses a low-glare green board surface with white text.
+- On small screens, the game screen prioritizes showing the formula and answer field without scrolling.
+- The input zone keeps keypad hints to one compact line to preserve button height.
+- When the handwriting pad is open, the external memo toggle is hidden because the pad already has its own close button.
+
+## Feedback
+
+- Correct answers use a calm green bloom and answer-field emphasis. The check mark was removed to preserve formula visibility.
+- Wrong answers use a restrained answer-field and formula nudge. The goal is to notify without making errors attractive.
+
+## Handwriting pad
+
+- The pad preloads a vertical multiplication setup showing only the multiplicand and multiplier.
+- Clearing the pad removes user strokes and redraws the original setup.

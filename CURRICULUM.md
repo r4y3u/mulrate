@@ -1,4 +1,4 @@
-# MulRate v1.0.0 beta.15 CURRICULUM
+# MulRate v1.0.0 beta.16 CURRICULUM
 
 乗法に限定した100段階。通常九九、1けたをかける筆算、拡張九九、2けたをかける筆算、小数の乗法、熟達者領域の順に構成する。
 

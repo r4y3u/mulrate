@@ -388,10 +388,6 @@ label:has(input[type="radio"]:checked) { color: #ffffff; font-weight: 800; }
 @keyframes shake { 0%,100% { transform: translateX(0); } 22% { transform: translateX(-7px); } 45% { transform: translateX(6px); } 68% { transform: translateX(-3px); } 86% { transform: translateX(2px); } }
 @keyframes fadeIn { to { opacity: 1; } }
 
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; scroll-behavior: auto !important; }
-}
-
 @media (min-width: 760px) and (orientation: landscape) {
   .app-shell { width: min(100%, 1180px); grid-template-rows: 1fr; grid-template-columns: 1fr minmax(360px, 44%); }
   .nav-window, .input-zone { height: calc(100dvh - max(16px, env(safe-area-inset-top)) - max(16px, env(safe-area-inset-bottom))); }
@@ -657,4 +653,120 @@ label:has(input[type="radio"]:checked) { color: #ffffff; font-weight: 800; }
 @media (max-width: 759px), (orientation: portrait) {
   .keypad.topLeft { grid-template-rows: repeat(4, minmax(48px, 1fr)); }
   .keypad.pseudo { grid-template-rows: repeat(3, minmax(56px, 1fr)); }
+}
+
+
+/* beta.16: compact mobile game view, handwriting-first overlay, and consistent feedback timing. */
+.learned-count {
+  margin: -2px 0 8px;
+  color: rgba(244, 251, 245, 0.66);
+  font-size: 0.82rem;
+  font-weight: 760;
+  text-align: right;
+  letter-spacing: 0.03em;
+}
+.learned-item {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.learned-main { min-width: 0; display: grid; gap: 2px; }
+.learned-point { color: var(--muted); font-size: 0.84rem; font-weight: 650; }
+.learned-number {
+  justify-self: end;
+  min-width: 2.4em;
+  text-align: right;
+  color: rgba(244, 251, 245, 0.45);
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.effect-layer.correct-pop::after { content: none !important; display: none !important; }
+.effect-layer.correct-pop::before {
+  opacity: 0.72;
+  background: radial-gradient(circle, rgba(255,255,255,0.72) 0 8%, rgba(152,224,183,0.44) 24%, rgba(152,224,183,0.12) 52%, rgba(152,224,183,0) 74%);
+}
+.formula.formula-wrong {
+  animation: formulaWrongHint 220ms ease-out;
+  color: #ffe8e4 !important;
+  text-shadow: 0 0 14px rgba(240,160,151,0.18);
+}
+@keyframes formulaWrongHint {
+  0%, 100% { transform: translateX(0); }
+  34% { transform: translateX(-2px); }
+  66% { transform: translateX(1px); }
+}
+
+.key-hint {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+  font-size: clamp(0.56rem, 1.55dvw, 0.76rem);
+  line-height: 1.05;
+  padding: 5px 8px;
+  letter-spacing: -0.01em;
+}
+
+.input-zone.pad-open .operation-titlebar { display: none; }
+.input-zone.pad-open:not(.overlay-mode) { grid-template-rows: auto minmax(0, 1fr); }
+.input-zone.pad-open.overlay-mode { grid-template-rows: minmax(0, 1fr); }
+.input-zone.pad-open.overlay-mode #padPanel { top: 6px; left: 6px; right: 6px; bottom: 6px; }
+.input-zone.pad-open #padPanel { min-height: 0; }
+
+/* Real-keyboard-like half-key offsets use a 20-column grid. */
+.keypad.topLeft,
+.keypad.pseudo {
+  grid-template-columns: repeat(20, minmax(0, 1fr));
+  gap: clamp(4px, 0.55dvw, 7px);
+  justify-content: center;
+  align-content: center;
+}
+.keypad.topLeft .key,
+.keypad.pseudo .key {
+  border-radius: 13px;
+  font-size: clamp(1.02rem, 2.2dvh, 1.34rem);
+}
+.keypad.topLeft .space-key,
+.keypad.pseudo .ok { font-size: clamp(0.78rem, 1.7dvh, 0.95rem); }
+
+@media (min-width: 760px) and (orientation: landscape) {
+  .keypad.topLeft,
+  .keypad.pseudo {
+    max-width: min(100%, 430px);
+    width: 100%;
+    margin: auto;
+  }
+  .keypad.topLeft { grid-template-rows: repeat(4, clamp(54px, 7.2dvh, 72px)); }
+  .keypad.pseudo { grid-template-rows: repeat(3, clamp(60px, 8.2dvh, 78px)); }
+}
+
+@media (max-width: 759px), (orientation: portrait) {
+  .app-shell.screen-game {
+    grid-template-rows: minmax(0, 48fr) minmax(0, 52fr);
+  }
+  .screen-game .game-card {
+    align-content: start;
+    gap: 6px;
+    grid-template-rows: auto auto minmax(56px, auto) auto auto auto;
+  }
+  .screen-game .formula {
+    min-height: clamp(58px, 15dvh, 112px);
+    font-size: clamp(2.35rem, 9.5dvh, 4.8rem);
+  }
+  .screen-game .message-area { min-height: 22px; }
+  .screen-game .answer-line { min-height: 44px; }
+  .screen-game .answer-display {
+    min-height: 42px;
+    font-size: clamp(1.55rem, 5.8dvh, 2.6rem);
+  }
+  .screen-game .sub-info { font-size: 0.82rem; line-height: 1.15; }
+  .key-hint { font-size: clamp(0.54rem, 2.35dvw, 0.72rem); }
+}
+
+@media (max-width: 430px) {
+  .app-shell.screen-game { grid-template-rows: minmax(0, 49fr) minmax(0, 51fr); }
+  .screen-game .game-card { padding: 8px; gap: 5px; }
+  .screen-game .game-meta { font-size: 0.78rem; }
+  .screen-game .formula { min-height: clamp(54px, 13dvh, 96px); font-size: clamp(2.15rem, 8.4dvh, 4.2rem); }
+  .screen-game .answer-display { min-height: 40px; }
+  .key-hint { padding-inline: 6px; }
+  .input-zone.pad-open.overlay-mode #padPanel { top: 6px; left: 6px; right: 6px; bottom: 6px; }
 }

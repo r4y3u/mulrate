@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const STORAGE_KEY = 'mulrate_v1_0_0_beta15_state';
+  const STORAGE_KEY = 'mulrate_v1_0_0_beta16_state';
   const MAX_RATE = 99999999;
   const SET_SIZE = 10;
   const ANSWER_EPSILON = 1e-9;
@@ -67,6 +67,7 @@
     homeDetail: document.getElementById('homeDetail'),
         startButton: document.getElementById('startButton'),
     learnedButton: document.getElementById('learnedButton'),
+    learnedCount: document.getElementById('learnedCount'),
     learnedList: document.getElementById('learnedList'),
     learnedBackButton: document.getElementById('learnedBackButton'),
     settingsButton: document.getElementById('settingsButton'),
@@ -365,6 +366,7 @@
       practiceMode: false,
       practiceTypeId: null,
       padCollapsed: true,
+      padBaseProblem: null,
       lastDelta: 0,
       lastOutcome: 'stay',
       result: null
@@ -419,8 +421,8 @@
       const avgFirstTime = Number(item.avgFirstTime || Infinity);
       const pattern = item.pattern || '';
       const outcome = item.outcome || '';
-      const kukuCleared = isKukuType(type) && (pattern === 'A-3' || outcome === 'kuku_skip_row') && firstCorrect === SET_SIZE && avgFirstTime <= type.targetSeconds * 1.8;
-      const basicCleared = !isKukuType(type) && pattern === 'A' && firstCorrect === SET_SIZE && avgFirstTime <= type.targetSeconds * 1.25;
+      const kukuCleared = isKukuType(type) && (pattern === 'A-3' || outcome === 'kuku_skip_row') && firstCorrect === SET_SIZE && avgFirstTime <= effectiveTargetSeconds(type) * 1.8;
+      const basicCleared = !isKukuType(type) && pattern === 'A' && firstCorrect === SET_SIZE && avgFirstTime <= effectiveTargetSeconds(type) * 1.25;
       const typeCleared = !isKukuType(type) && pattern === 'C' && (outcome === 'advance' || isSkipOutcome(outcome)) && finalCorrect >= 9 && firstCorrect >= 8;
       if (kukuCleared || basicCleared || typeCleared) learned.add(type.id);
     }
@@ -798,7 +800,7 @@
     setAnswerDisplay('');
     els.subInfo.textContent = isDecimalAnswer(problem) ? '小数点は表示済みです。各位に数字だけ入力してください' : '答えを入力してください';
     els.inlineActions.innerHTML = '';
-    clearPad();
+    setPadProblem(problem);
     updateOperationState();
   }
 
@@ -919,7 +921,7 @@
     setAnswerDisplay('');
     els.subInfo.textContent = isDecimalAnswer(problem) ? '小数点は表示済みです。各位に数字だけ入力してください' : '答えを入力してください';
     els.inlineActions.innerHTML = '';
-    clearPad();
+    setPadProblem(problem);
     updateOperationState();
   }
 
@@ -1015,7 +1017,7 @@
     setAnswerDisplay('');
     els.subInfo.textContent = resultSubInfo(session.lastOutcome);
     els.inlineActions.innerHTML = '';
-    addInlineButton('もう一度', 'primary', () => startSet(session.practiceMode ? { practiceTypeId: session.practiceTypeId } : {}));
+    addInlineButton('スタート', 'primary', () => startSet(session.practiceMode ? { practiceTypeId: session.practiceTypeId } : {}));
     addInlineButton('初期画面へ', 'secondary', () => goHome());
     updateTopInfo();
     animateResultNumbers(result);
@@ -1028,7 +1030,7 @@
     const avgFirstTime = average(qs.map((q) => q.firstTime).filter((v) => Number.isFinite(v)));
     const retryTimes = qs.map((q) => q.retryTime).filter((v) => Number.isFinite(v));
     const avgFinalTime = includeRetry && retryTimes.length ? average(qs.map((q) => (q.firstTime || 0) + (q.retryTime || 0))) : avgFirstTime;
-    const targetTime = average(qs.map((q) => findType(q.typeId)?.targetSeconds || 5));
+    const targetTime = average(qs.map((q) => effectiveTargetSeconds(findType(q.typeId))));
     const ratingBefore = state.player.rating;
     return { questions: qs, firstCorrect, finalCorrect, avgFirstTime, avgFinalTime, targetTime, ratingBefore };
   }
@@ -1108,8 +1110,8 @@
     const achievedRaw = summary.questions.reduce((sum, q) => {
       const type = findType(q.typeId);
       const resultFactor = q.initialCorrect ? 1 : q.retryCorrect ? 0.45 : 0;
-      const time = q.firstTime || type?.targetSeconds || 5;
-      const speedFactor = getSpeedFactor(time, type?.targetSeconds || 5);
+      const time = q.firstTime || effectiveTargetSeconds(type);
+      const speedFactor = getSpeedFactor(time, effectiveTargetSeconds(type));
       return sum + resultFactor * speedFactor * (type?.difficulty || 1);
     }, 0);
     const achieved = achievedRaw * getInitialAccuracyFactor(summary);
@@ -1205,7 +1207,7 @@
   function estimateQuestionImpact(problem, correct, seconds, retry) {
     const type = findType(problem.typeId);
     const resultFactor = correct ? (retry ? 0.45 : 1) : 0;
-    const speedFactor = getSpeedFactor(seconds, type?.targetSeconds || 5);
+    const speedFactor = getSpeedFactor(seconds, effectiveTargetSeconds(type));
     return Math.round(42 * resultFactor * speedFactor * Math.pow(type?.difficulty || 1, 1.32));
   }
 
@@ -1362,18 +1364,18 @@
     const typeInitialRate = typeInitialCorrect / Math.max(1, questions.length);
     const highStage = type.difficulty >= 7.0;
     const finalStage = type.id === CURRICULUM[CURRICULUM.length - 1].id;
-    const stableHighStage = highStage && allFinalCorrect && summary.finalCorrect >= 9 && summary.firstCorrect >= 8 && typeInitialRate >= 0.75 && avgTypeTime <= type.targetSeconds * 1.75;
-    const stableFinalStage = finalStage && allFinalCorrect && summary.finalCorrect >= 9 && summary.firstCorrect >= 7 && avgTypeTime <= type.targetSeconds * 1.85;
+    const stableHighStage = highStage && allFinalCorrect && summary.finalCorrect >= 9 && summary.firstCorrect >= 8 && typeInitialRate >= 0.75 && avgTypeTime <= effectiveTargetSeconds(type) * 1.75;
+    const stableFinalStage = finalStage && allFinalCorrect && summary.finalCorrect >= 9 && summary.firstCorrect >= 7 && avgTypeTime <= effectiveTargetSeconds(type) * 1.85;
 
     // 基本確認で安定していれば、その時点で反復を解放する。
     if (pattern === 'A') {
-      return (allInitialCorrect && avgTypeTime <= type.targetSeconds * 1.20) || stableHighStage || stableFinalStage;
+      return (allInitialCorrect && avgTypeTime <= effectiveTargetSeconds(type) * 1.20) || stableHighStage || stableFinalStage;
     }
 
     // 次の類型へ進めるだけでなく、初回正解の安定も見て反復対象にする。
     // 高速だがミスが残る場合は、解放を少し遅らせる。
     if ((pattern === 'C' || highStage || finalStage) && (isSkipOutcome(outcome) || outcome === 'advance' || outcome === 'stay')) {
-      return stableHighStage || stableFinalStage || (allFinalCorrect && summary.finalCorrect >= 9 && summary.firstCorrect >= 9 && typeInitialRate >= 0.9 && avgTypeTime <= type.targetSeconds * 1.55);
+      return stableHighStage || stableFinalStage || (allFinalCorrect && summary.finalCorrect >= 9 && summary.firstCorrect >= 9 && typeInitialRate >= 0.9 && avgTypeTime <= effectiveTargetSeconds(type) * 1.55);
     }
 
     return false;
@@ -1392,7 +1394,8 @@
       const firstRate = m.firstCorrect / Math.max(1, m.attempts);
       const finalRate = m.finalCorrect / Math.max(1, m.attempts);
       const type = findType(q.typeId);
-      const speed = type ? clamp(type.targetSeconds / Math.max(type.targetSeconds, m.avgTime || type.targetSeconds), 0.35, 1) : 0.5;
+      const target = effectiveTargetSeconds(type);
+      const speed = type ? clamp(target / Math.max(target, m.avgTime || target), 0.35, 1) : 0.5;
       m.mastery = clamp(firstRate * 0.62 + finalRate * 0.25 + speed * 0.13, 0, 1);
     }
   }
@@ -1400,6 +1403,21 @@
   function rememberRecentProblems(questions) {
     const keys = questions.map(problemKey);
     state.recentProblems = state.recentProblems.concat(keys).slice(-80);
+  }
+
+
+  function writtenGraceForType(type) {
+    if (!type || isKukuType(type)) return 1;
+    const id = type.id || '';
+    if (id.startsWith('M2D2') || id.startsWith('M3D2')) return 1.18;
+    if (id.startsWith('M4D') || id.startsWith('M2D3') || id.startsWith('M3D3') || id === 'M4D4_MIX' || id === 'MASTER_MUL_MIX') return 1.28;
+    if (id.startsWith('DEC_') || id.startsWith('WHOLE_X_DEC') || id === 'DECIMAL_MUL_MIX') return type.difficulty >= 6 ? 1.18 : 1.12;
+    if (type.difficulty >= 4.0) return 1.12;
+    return 1;
+  }
+
+  function effectiveTargetSeconds(type) {
+    return (type?.targetSeconds || 5) * writtenGraceForType(type);
   }
 
   function currentType() {
@@ -1601,28 +1619,28 @@
     }
 
     if (layout === 'normal') {
-      els.keyHint.textContent = 'デフォルト　数字：入力　Enter / Space：決定　Backspace：1文字削除';
+      els.keyHint.textContent = '数字:入力  Enter/Space:決定  Backspace:削除';
     } else if (layout === 'topLeft') {
-      els.keyHint.textContent = '疑似テンキー左　1 2 3 / Q W E / A S D F / Z　Space：決定';
+      els.keyHint.textContent = '疑似左  123/QWE/ASDF/Z  Space:決定';
     } else {
-      els.keyHint.textContent = '疑似テンキー右　7 8 9 0 / U I O / J K L ;　Space：決定';
+      els.keyHint.textContent = '疑似右  7890/UIO/JKL/;:決定';
     }
   }
 
   function getKeypadKeys(layout) {
     if (layout === 'topLeft') {
       return [
-        digitKey('1', '', 1, 1, 2, '1'), digitKey('2', '', 1, 3, 2, '2'), digitKey('3', '', 1, 5, 2, '3'),
-        digitKey('4', '', 2, 2, 2, 'Q'), digitKey('5', '', 2, 4, 2, 'W'), digitKey('6', '', 2, 6, 2, 'E'),
-        digitKey('7', '', 3, 3, 2, 'A'), digitKey('8', '', 3, 5, 2, 'S'), digitKey('9', '', 3, 7, 2, 'D'), digitKey('0', '', 3, 9, 2, 'F'),
-        controlKey('←', 'backspace', '', 4, 4, 2, 'Z'), okKey('Space', 'space-key', 4, 6, 5, 'Space')
+        digitKey('1', '', 1, 1, 4, '1'), digitKey('2', '', 1, 5, 4, '2'), digitKey('3', '', 1, 9, 4, '3'),
+        digitKey('4', '', 2, 3, 4, 'Q'), digitKey('5', '', 2, 7, 4, 'W'), digitKey('6', '', 2, 11, 4, 'E'),
+        digitKey('7', '', 3, 4, 4, 'A'), digitKey('8', '', 3, 8, 4, 'S'), digitKey('9', '', 3, 12, 4, 'D'), digitKey('0', '', 3, 16, 4, 'F'),
+        controlKey('←', 'backspace', '', 4, 6, 4, 'Z'), okKey('Space', 'space-key', 4, 10, 8, 'Space')
       ];
     }
     if (layout === 'pseudo') {
       return [
-        digitKey('7', '', 1, 1, 2, '7'), digitKey('8', '', 1, 3, 2, '8'), digitKey('9', '', 1, 5, 2, '9'), digitKey('0', '', 1, 7, 2, '0'),
-        digitKey('4', '', 2, 2, 2, 'U'), digitKey('5', '', 2, 4, 2, 'I'), digitKey('6', '', 2, 6, 2, 'O'), controlKey('←', 'backspace', '', 2, 8, 2, 'Backspace'),
-        digitKey('1', '', 3, 3, 2, 'J'), digitKey('2', '', 3, 5, 2, 'K'), digitKey('3', '', 3, 7, 2, 'L'), okKey(';', '', 3, 9, 2, ';')
+        digitKey('7', '', 1, 1, 4, '7'), digitKey('8', '', 1, 5, 4, '8'), digitKey('9', '', 1, 9, 4, '9'), digitKey('0', '', 1, 13, 4, '0'),
+        digitKey('4', '', 2, 3, 4, 'U'), digitKey('5', '', 2, 7, 4, 'I'), digitKey('6', '', 2, 11, 4, 'O'), controlKey('←', 'backspace', '', 2, 15, 4, 'Backspace'),
+        digitKey('1', '', 3, 4, 4, 'J'), digitKey('2', '', 3, 8, 4, 'K'), digitKey('3', '', 3, 12, 4, 'L'), okKey(';', '', 3, 16, 4, ';')
       ];
     }
     return [
@@ -1677,6 +1695,9 @@
   }
 
   function showScreen(name) {
+    els.app.dataset.screen = name;
+    for (const cls of ['screen-home', 'screen-game', 'screen-pause', 'screen-settings', 'screen-learned']) els.app.classList.remove(cls);
+    els.app.classList.add(`screen-${name}`);
     for (const screen of [els.homeScreen, els.gameScreen, els.pauseScreen, els.settingsScreen, els.learnedScreen]) {
       screen.classList.remove('active');
     }
@@ -1713,25 +1734,20 @@
   }
 
   function animateHomeRate(target) {
-    if (homeRateAnimationId) cancelAnimationFrame(homeRateAnimationId);
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
-      setHomeRate(target);
-      return;
-    }
+    if (homeRateAnimationId) window.clearInterval(homeRateAnimationId);
     const started = performance.now();
     const duration = 2000;
     const final = Math.max(0, Math.round(target || 0));
-    const tick = (now) => {
-      const t = clamp((now - started) / duration, 0, 1);
-      setHomeRate(Math.round(final * t));
-      if (t < 1) {
-        homeRateAnimationId = requestAnimationFrame(tick);
-      } else {
-        homeRateAnimationId = null;
-      }
-    };
     setHomeRate(0);
-    homeRateAnimationId = requestAnimationFrame(tick);
+    homeRateAnimationId = window.setInterval(() => {
+      const t = clamp((performance.now() - started) / duration, 0, 1);
+      setHomeRate(Math.round(final * t));
+      if (t >= 1) {
+        window.clearInterval(homeRateAnimationId);
+        homeRateAnimationId = null;
+        setHomeRate(final);
+      }
+    }, 50);
   }
 
   function openSettings() {
@@ -1776,10 +1792,14 @@
     els.inputZone.classList.toggle('overlay-mode', effectiveOverlay);
     els.inputZone.classList.toggle('pad-first', state.settings.operationOrder !== 'keypadFirst');
     els.inputZone.classList.toggle('keypad-first', state.settings.operationOrder === 'keypadFirst');
-    for (const fieldset of [els.handwritingModeFieldset, els.operationOrderFieldset]) {
-      if (!fieldset) continue;
-      fieldset.classList.toggle('settings-disabled', padHidden);
-      fieldset.querySelectorAll('input').forEach((input) => { input.disabled = padHidden; });
+    if (els.handwritingModeFieldset) {
+      els.handwritingModeFieldset.classList.toggle('settings-disabled', padHidden);
+      els.handwritingModeFieldset.querySelectorAll('input').forEach((input) => { input.disabled = padHidden; });
+    }
+    if (els.operationOrderFieldset) {
+      const disableOrder = padHidden || effectiveOverlay;
+      els.operationOrderFieldset.classList.toggle('settings-disabled', disableOrder);
+      els.operationOrderFieldset.querySelectorAll('input').forEach((input) => { input.disabled = disableOrder; });
     }
     if (padHidden) session.padCollapsed = true;
     applyPadVisibility();
@@ -1805,6 +1825,7 @@
     }
     session = createEmptySession();
     session.padCollapsed = true;
+    session.padBaseProblem = null;
     applyPadVisibility();
     clearPad();
     showScreen('home');
@@ -1889,6 +1910,7 @@
     els.effectLayer.classList.remove('correct-pop');
     els.navWindow.classList.remove('correct-glow');
     els.answerDisplay.classList.remove('answer-correct', 'answer-wrong');
+    els.formula.classList.remove('formula-wrong');
     els.gameCard?.classList.remove('wrong-nudge');
     void els.effectLayer.offsetWidth;
 
@@ -1905,20 +1927,24 @@
     }
 
     els.answerDisplay.classList.add('answer-wrong');
+    els.formula.classList.add('formula-wrong');
     els.gameCard?.classList.add('wrong-nudge');
     window.setTimeout(() => {
       els.answerDisplay.classList.remove('answer-wrong');
+      els.formula.classList.remove('formula-wrong');
       els.gameCard?.classList.remove('wrong-nudge');
     }, 240);
   }
 
   function applyPadVisibility() {
     const canShow = Boolean(state.settings.handwritingPad);
+    const isOpen = canShow && !session.padCollapsed;
     els.inputZone.classList.toggle('no-pad', !canShow);
+    els.inputZone.classList.toggle('pad-open', isOpen);
     els.padPanel.classList.toggle('off', !canShow);
-    els.togglePadButton.classList.toggle('off', !canShow);
+    els.togglePadButton.classList.toggle('off', !canShow || isOpen);
     els.padPanel.classList.toggle('collapsed', !canShow || session.padCollapsed);
-    els.togglePadButton.textContent = session.padCollapsed ? 'メモを開く' : 'メモを閉じる';
+    els.togglePadButton.textContent = session.padCollapsed ? 'メモを開く' : '';
   }
 
   function togglePad(force) {
@@ -1946,6 +1972,7 @@
 
   function renderLearnedList() {
     els.learnedList.innerHTML = '';
+    if (els.learnedCount) els.learnedCount.textContent = `${state.learnedTypes.length} / ${CURRICULUM.length}`;
     if (!state.learnedTypes.length) {
       const empty = document.createElement('p');
       empty.className = 'muted-text';
@@ -1956,11 +1983,12 @@
     for (const typeId of state.learnedTypes) {
       const type = findType(typeId);
       if (!type) continue;
+      const index = CURRICULUM.findIndex((item) => item.id === type.id) + 1;
       const item = document.createElement('button');
       item.type = 'button';
       item.className = 'learned-item';
-      item.setAttribute('aria-label', `${type.label}を復習する`);
-      item.innerHTML = `<strong>${escapeHtml(type.label)}</strong><span>ポイント：${escapeHtml(type.point)}</span>`;
+      item.setAttribute('aria-label', `${index}番 ${type.label}を復習する`);
+      item.innerHTML = `<span class="learned-main"><strong>${escapeHtml(type.label)}</strong><span class="learned-point">ポイント：${escapeHtml(type.point)}</span></span><span class="learned-number">${index}</span>`;
       item.addEventListener('click', () => startSet({ practiceTypeId: type.id }));
       els.learnedList.appendChild(item);
     }
@@ -2011,10 +2039,45 @@
     canvas.addEventListener('pointercancel', end);
   }
 
+  function setPadProblem(problem) {
+    session.padBaseProblem = problem || null;
+    clearPad();
+  }
+
   function clearPad() {
     const canvas = els.scratchPad;
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (session.padBaseProblem) drawScratchBase(session.padBaseProblem);
+  }
+
+  function drawScratchBase(problem) {
+    const canvas = els.scratchPad;
+    const ctx = canvas.getContext('2d');
+    const left = formatOperand(problem.left);
+    const right = formatOperand(problem.right);
+    const longest = Math.max(left.length, right.length + 2);
+    const fontSize = longest >= 8 ? 36 : longest >= 6 ? 42 : 48;
+    const lineHeight = Math.round(fontSize * 1.22);
+    const blockWidth = Math.min(canvas.width * 0.42, Math.max(190, longest * fontSize * 0.72 + 54));
+    const x = Math.min(canvas.width - 36, Math.max(blockWidth, 215));
+    const y = Math.max(56, fontSize + 18);
+
+    ctx.save();
+    ctx.font = `800 ${fontSize}px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+    ctx.fillStyle = 'rgba(16, 43, 37, 0.50)';
+    ctx.strokeStyle = 'rgba(16, 43, 37, 0.30)';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(left, x, y);
+    ctx.fillText(`× ${right}`, x, y + lineHeight);
+    ctx.beginPath();
+    ctx.moveTo(x - blockWidth + 18, y + lineHeight + 14);
+    ctx.lineTo(x + 8, y + lineHeight + 14);
+    ctx.stroke();
+    ctx.restore();
   }
 
   function attachEvents() {
