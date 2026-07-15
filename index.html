@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#0e1d1b">
   <meta name="description" content="MulRate - かけ算の計算力を鍛えるレート制トレーニングアプリ">
-  <title>MulRate v2.0.0 alpha.1</title>
+  <title>MulRate v2.0.0 alpha.2</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -93,32 +93,36 @@
 
         <section id="profileScreen" class="screen" aria-labelledby="profileTitle">
           <div class="settings-card compact-card">
-            <h2 id="profileTitle">プロフィール</h2>
-            <p class="muted-text">ランキングや対戦で使う公開名を、この端末に保存します。</p>
+            <div class="screen-heading-row">
+              <div>
+                <p id="profileStepLabel" class="eyebrow">初回設定</p>
+                <h2 id="profileTitle">プロフィール</h2>
+              </div>
+              <span id="profileLockBadge" class="connection-badge off">名前固定</span>
+            </div>
+            <p id="profileIntro" class="muted-text">最初に、ランキングや対戦で使う表示名を決めます。</p>
 
             <div class="profile-preview" aria-live="polite">
               <span>表示名</span>
-              <strong id="profilePreviewName">プレイヤー</strong>
+              <strong id="profilePreviewName">未設定</strong>
               <small id="profileCode">端末ID：--------</small>
             </div>
 
             <label class="form-label" for="nicknameInput">ニックネーム</label>
-            <input id="nicknameInput" class="text-input" type="text" maxlength="12" autocomplete="off" spellcheck="false" placeholder="12文字以内">
-            <p class="settings-note left-note">文字・数字・ひらがな・カタカナ・漢字を使用できます。チャット機能は設けません。</p>
+            <input id="nicknameInput" class="text-input" type="text" maxlength="12" autocomplete="off" spellcheck="false" placeholder="1〜12文字">
+            <p id="nicknameRuleNote" class="settings-note left-note">文字・数字・ひらがな・カタカナ・漢字を使用できます。保存した名前は、アプリデータをリセットするまで変更できません。</p>
 
             <label class="consent-row">
               <input id="rankingConsentInput" type="checkbox">
               <span>将来、ランキングへこの表示名と成績を送信することに同意する</span>
             </label>
+            <p id="profileConsentNote" class="settings-note left-note">同意は任意です。同意後は、アプリデータをリセットするまで解除できません。</p>
             <p id="profileSyncState" class="status-panel">現在はサーバー未接続です。外部への送信は行われません。</p>
-            <p id="profileSaveMessage" class="settings-note" aria-live="polite"></p>
+            <p id="profileSaveMessage" class="settings-note validation-message" aria-live="polite"></p>
 
             <div class="settings-actions">
-              <button id="profileSaveButton" class="primary-button" type="button">保存</button>
-              <button id="profileBackButton" class="secondary-button" type="button">初期画面へ</button>
-            </div>
-            <div class="settings-actions subtle-actions">
-              <button id="profileResetButton" class="danger-button subtle-danger" type="button">プロフィールを初期化</button>
+              <button id="profileSaveButton" class="primary-button" type="button">プロフィールを決定</button>
+              <button id="profileBackButton" class="secondary-button off" type="button">初期画面へ</button>
             </div>
           </div>
         </section>
@@ -140,10 +144,11 @@
               <div><span>完了セット</span><strong id="rankingCompletedSets">0</strong></div>
             </div>
 
-            <div class="ranking-status-card">
-              <strong>オンラインランキング</strong>
+            <button id="rankingOnlineCard" class="ranking-status-card" type="button" aria-haspopup="dialog" aria-controls="rankingOverlay">
+              <span class="ranking-card-heading"><strong>オンラインランキング</strong><span>トップ200を見る</span></span>
+              <strong id="rankingPosition" class="ranking-position">—位／—位中</strong>
               <p id="rankingOnlineStatus">バックエンド未接続のため、現在は端末内記録のみ表示しています。</p>
-            </div>
+            </button>
 
             <h3 class="section-subtitle">最近の記録</h3>
             <div id="rankingRecentList" class="ranking-recent-list"></div>
@@ -202,9 +207,18 @@
               <label><input type="radio" name="sound" value="off"> OFF</label>
             </fieldset>
 
+            <fieldset>
+              <legend>オンラインランキング</legend>
+              <label class="consent-row settings-consent-row">
+                <input id="settingsRankingConsentInput" type="checkbox">
+                <span>将来、ランキングへこの表示名と成績を送信することに同意する</span>
+              </label>
+              <p id="settingsConsentNote" class="settings-note left-note">同意後は、アプリデータをリセットするまで解除できません。</p>
+            </fieldset>
+
             <p class="settings-note">設定は選んだ時点で保存されます。</p>
             <div class="settings-actions subtle-actions">
-              <button id="resetDataButton" class="danger-button subtle-danger" type="button">学習データをリセット</button>
+              <button id="resetDataButton" class="danger-button subtle-danger" type="button">アプリデータをリセット</button>
             </div>
           </div>
         </section>
@@ -223,6 +237,7 @@
       </div>
 
       <div id="padPanel" class="pad-panel collapsed">
+        <div id="padAnswerEffect" class="pad-answer-effect" aria-hidden="true"></div>
         <div class="pad-toolbar">
           <span class="pad-title">手書きパッド</span>
           <div class="pad-actions">
@@ -239,8 +254,24 @@
         <div id="keypad" class="keypad" role="group" aria-label="テンキー"></div>
       </div>
     </section>
+
+    <div id="rankingOverlay" class="ranking-overlay off" role="dialog" aria-modal="true" aria-labelledby="rankingOverlayTitle">
+      <section class="ranking-overlay-panel">
+        <header class="ranking-overlay-header">
+          <div>
+            <p class="eyebrow">ONLINE RANKING</p>
+            <h2 id="rankingOverlayTitle">トップランキング</h2>
+          </div>
+          <span>クリックで閉じる</span>
+        </header>
+        <div id="rankingOverlayStatus" class="ranking-overlay-status">ランキングを読み込んでいます。</div>
+        <div id="rankingOverlayList" class="ranking-overlay-list" aria-label="オンラインランキング1位から200位"></div>
+      </section>
+    </div>
   </div>
 
+  <script src="online-config.js"></script>
+  <script src="name-filter.js"></script>
   <script src="online-adapter.js"></script>
   <script src="app.js"></script>
 </body>

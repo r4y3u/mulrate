@@ -1,9 +1,9 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '2.0.0-alpha.1';
-  const STORAGE_KEY = 'mulrate_v2_0_0_alpha1_state';
-  const LEGACY_STORAGE_KEYS = ['mulrate_v1_0_0_beta18_state'];
+  const APP_VERSION = '2.0.0-alpha.2';
+  const STORAGE_KEY = 'mulrate_v2_0_0_alpha2_state';
+  const LEGACY_STORAGE_KEYS = ['mulrate_v2_0_0_alpha1_state', 'mulrate_v1_0_0_beta18_state'];
   const MAX_RATE = 99999999;
   const SET_SIZE = 10;
   const ANSWER_EPSILON = 1e-9;
@@ -45,8 +45,13 @@
       enabled: false,
       provider: 'none',
       playerId: '',
-      nickname: 'プレイヤー',
+      nickname: '',
+      profileComplete: false,
+      nicknameLocked: false,
       consent: false,
+      consentLocked: false,
+      currentRank: null,
+      totalPlayers: null,
       createdAt: '',
       updatedAt: '',
       lastSyncAt: '',
@@ -98,6 +103,9 @@
     learnedBackButton: document.getElementById('learnedBackButton'),
     settingsButton: document.getElementById('settingsButton'),
     profileButton: document.getElementById('profileButton'),
+    profileStepLabel: document.getElementById('profileStepLabel'),
+    profileLockBadge: document.getElementById('profileLockBadge'),
+    profileIntro: document.getElementById('profileIntro'),
     rankingButton: document.getElementById('rankingButton'),
     nicknameInput: document.getElementById('nicknameInput'),
     rankingConsentInput: document.getElementById('rankingConsentInput'),
@@ -107,14 +115,19 @@
     profileSaveMessage: document.getElementById('profileSaveMessage'),
     profileSaveButton: document.getElementById('profileSaveButton'),
     profileBackButton: document.getElementById('profileBackButton'),
-    profileResetButton: document.getElementById('profileResetButton'),
+    profileConsentNote: document.getElementById('profileConsentNote'),
     rankingPlayerName: document.getElementById('rankingPlayerName'),
     rankingConnectionBadge: document.getElementById('rankingConnectionBadge'),
     rankingCurrentRate: document.getElementById('rankingCurrentRate'),
     rankingHighestRate: document.getElementById('rankingHighestRate'),
     rankingLearnedCount: document.getElementById('rankingLearnedCount'),
     rankingCompletedSets: document.getElementById('rankingCompletedSets'),
+    rankingOnlineCard: document.getElementById('rankingOnlineCard'),
+    rankingPosition: document.getElementById('rankingPosition'),
     rankingOnlineStatus: document.getElementById('rankingOnlineStatus'),
+    rankingOverlay: document.getElementById('rankingOverlay'),
+    rankingOverlayStatus: document.getElementById('rankingOverlayStatus'),
+    rankingOverlayList: document.getElementById('rankingOverlayList'),
     rankingRecentList: document.getElementById('rankingRecentList'),
     rankingProfileButton: document.getElementById('rankingProfileButton'),
     rankingBackButton: document.getElementById('rankingBackButton'),
@@ -129,11 +142,14 @@
     resumeButton: document.getElementById('resumeButton'),
     pauseHomeButton: document.getElementById('pauseHomeButton'),
     resetDataButton: document.getElementById('resetDataButton'),
+    settingsRankingConsentInput: document.getElementById('settingsRankingConsentInput'),
+    settingsConsentNote: document.getElementById('settingsConsentNote'),
     inputZone: document.getElementById('inputZone'),
     handwritingModeFieldset: document.getElementById('handwritingModeFieldset'),
     operationOrderFieldset: document.getElementById('operationOrderFieldset'),
     togglePadButton: document.getElementById('togglePadButton'),
     padPanel: document.getElementById('padPanel'),
+    padAnswerEffect: document.getElementById('padAnswerEffect'),
     clearPadButton: document.getElementById('clearPadButton'),
     closePadButton: document.getElementById('closePadButton'),
     scratchPad: document.getElementById('scratchPad'),
@@ -402,6 +418,7 @@
   let isDrawing = false;
   let lastPoint = null;
   let homeRateAnimationId = null;
+  let padEffectTimer = null;
 
   function createEmptySession() {
     return {
@@ -463,13 +480,21 @@
     next.player.rating = clamp(Math.round(next.player.rating || 300), 0, MAX_RATE);
     next.player.highestRating = clamp(Math.round(next.player.highestRating || next.player.rating), 0, MAX_RATE);
     next.online.playerId = String(next.online.playerId || generatePlayerId());
-    next.online.nickname = sanitizeNickname(next.online.nickname || value.player?.nickname || 'プレイヤー');
+    const legacyNickname = String(next.online.nickname || value.player?.nickname || '').normalize('NFKC').trim();
+    const legacyNameValidation = validateNickname(legacyNickname);
+    const inferredProfileComplete = Boolean(legacyNameValidation.ok && legacyNickname !== 'プレイヤー');
+    next.online.profileComplete = Boolean((next.online.profileComplete || inferredProfileComplete) && legacyNameValidation.ok);
+    next.online.nicknameLocked = Boolean(next.online.nicknameLocked || next.online.profileComplete);
+    next.online.nickname = next.online.profileComplete ? legacyNameValidation.value : '';
     next.online.consent = Boolean(next.online.consent);
+    next.online.consentLocked = Boolean(next.online.consentLocked || next.online.consent);
+    next.online.currentRank = Number.isFinite(Number(next.online.currentRank)) ? Math.max(1, Math.trunc(Number(next.online.currentRank))) : null;
+    next.online.totalPlayers = Number.isFinite(Number(next.online.totalPlayers)) ? Math.max(0, Math.trunc(Number(next.online.totalPlayers))) : null;
     next.online.createdAt = next.online.createdAt || now;
     next.online.updatedAt = next.online.updatedAt || now;
     const adapter = getOnlineAdapter();
     next.online.provider = adapter.isConfigured ? adapter.provider : 'none';
-    next.online.enabled = Boolean(adapter.isConfigured && next.online.consent);
+    next.online.enabled = Boolean(adapter.isConfigured && next.online.consent && next.online.profileComplete);
     next.learnedTypes = repairLearnedTypes(next);
     return next;
   }
@@ -519,11 +544,33 @@
     return String(playerId || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase().padEnd(8, '-');
   }
 
+  function normalizeNickname(value) {
+    return String(value || '').normalize('NFKC').replace(/[\u0000-\u001f\u007f]/g, '').trim().replace(/\s+/g, ' ');
+  }
+
+  function validateNickname(value) {
+    const normalized = normalizeNickname(value);
+    const chars = Array.from(normalized);
+    if (!chars.length) return { ok: false, message: 'ニックネームを入力してください。' };
+    if (chars.length > 12) return { ok: false, message: 'ニックネームは12文字以内にしてください。' };
+    if (!chars.every((char) => /[\p{L}\p{N}_・ー\- ]/u.test(char))) {
+      return { ok: false, message: '使用できない記号や文字が含まれています。' };
+    }
+    const filterResult = window.MulRateNameFilter?.validate?.(normalized) || { ok: true };
+    if (!filterResult.ok) {
+      return {
+        ok: false,
+        message: filterResult.code === 'RESERVED_NAME'
+          ? '運営や管理者と誤認される名前は使用できません。'
+          : 'このニックネームは使用できません。別の名前を入力してください。'
+      };
+    }
+    return { ok: true, value: normalized };
+  }
+
   function sanitizeNickname(value) {
-    const normalized = String(value || '').normalize('NFKC').replace(/[\u0000-\u001f\u007f]/g, '').trim().replace(/\s+/g, ' ');
-    const allowed = Array.from(normalized).filter((char) => /[\p{L}\p{N}_・ー\- ]/u.test(char));
-    const result = allowed.slice(0, 12).join('').trim();
-    return result || 'プレイヤー';
+    const result = validateNickname(value);
+    return result.ok ? result.value : '';
   }
 
   function randInt(min, max) {
@@ -1098,6 +1145,7 @@
     state.history = state.history.slice(-50);
     state.progress.completedSets += 1;
     saveState();
+    syncLatestRanking();
   }
 
   function createSessionVerification(finishedAt) {
@@ -1827,6 +1875,12 @@
 
   function handleKeyboard(event) {
     if (event.isComposing) return;
+    if (event.key === 'Escape' && els.rankingOverlay && !els.rankingOverlay.classList.contains('off')) {
+      event.preventDefault();
+      closeRankingOverlay();
+      return;
+    }
+    if (els.app.dataset.screen === 'profile' && document.activeElement === els.nicknameInput) return;
     const key = event.key;
     const layout = state.settings.keypadLayout;
     const mapped = mapPhysicalKey(key, layout);
@@ -1857,6 +1911,7 @@
   }
 
   function showScreen(name) {
+    if (!state.online.profileComplete && name !== 'profile') name = 'profile';
     els.app.dataset.screen = name;
     for (const cls of ['screen-home', 'screen-game', 'screen-pause', 'screen-settings', 'screen-learned', 'screen-profile', 'screen-ranking']) els.app.classList.remove(cls);
     els.app.classList.add(`screen-${name}`);
@@ -1875,7 +1930,7 @@
     active?.classList.add('active');
 
     els.pauseButton.classList.toggle('hidden', !(name === 'game' && session.phase === 'playing'));
-    els.homeButton.classList.toggle('hidden', name === 'home');
+    els.homeButton.classList.toggle('hidden', name === 'home' || !state.online.profileComplete);
     updateTopInfo({ animateHomeRate: name === 'home' });
     updateOperationState();
   }
@@ -1883,7 +1938,7 @@
   function updateTopInfo(options = {}) {
     const rate = formatRate(state.player.rating);
     const highestRate = Math.max(state.player.highestRating || 0, state.player.rating || 0);
-    const nickname = state.online.nickname === 'プレイヤー' ? '' : `${state.online.nickname}｜`;
+    const nickname = state.online.nickname ? `${state.online.nickname}｜` : '';
     els.statusText.textContent = `${nickname}レート：${rate}`;
     if (options.animateHomeRate) {
       animateHomeRate(highestRate);
@@ -1918,63 +1973,101 @@
   function openProfile() {
     renderProfile();
     showScreen('profile');
+    if (!state.online.profileComplete) window.setTimeout(() => els.nicknameInput?.focus(), 0);
   }
 
   function renderProfile() {
-    if (els.nicknameInput) els.nicknameInput.value = state.online.nickname;
-    if (els.rankingConsentInput) els.rankingConsentInput.checked = Boolean(state.online.consent);
-    if (els.profilePreviewName) els.profilePreviewName.textContent = state.online.nickname;
+    const complete = Boolean(state.online.profileComplete);
+    const consentLocked = Boolean(state.online.consentLocked || state.online.consent);
+    if (els.nicknameInput) {
+      els.nicknameInput.value = complete ? state.online.nickname : '';
+      els.nicknameInput.disabled = complete;
+      els.nicknameInput.setAttribute('aria-readonly', complete ? 'true' : 'false');
+    }
+    if (els.rankingConsentInput) {
+      els.rankingConsentInput.checked = Boolean(state.online.consent);
+      els.rankingConsentInput.disabled = consentLocked;
+    }
+    if (els.profilePreviewName) els.profilePreviewName.textContent = complete ? state.online.nickname : '未設定';
     if (els.profileCode) els.profileCode.textContent = `端末ID：${shortPlayerCode(state.online.playerId)}`;
+    if (els.profileStepLabel) els.profileStepLabel.textContent = complete ? 'PROFILE' : '初回設定';
+    if (els.profileLockBadge) els.profileLockBadge.classList.toggle('off', !complete);
+    if (els.profileIntro) {
+      els.profileIntro.textContent = complete
+        ? '表示名は固定されています。公開に未同意の場合は、設定画面から後で同意できます。'
+        : '最初に、ランキングや対戦で使う表示名を決めます。この画面を完了するまで学習は開始できません。';
+    }
+    if (els.profileConsentNote) {
+      els.profileConsentNote.textContent = consentLocked
+        ? '公開への同意は保存済みです。アプリデータをリセットするまで解除できません。'
+        : '同意は任意です。同意しない場合も学習できます。後から設定画面で同意できます。';
+    }
     if (els.profileSyncState) {
       els.profileSyncState.textContent = state.online.enabled
         ? `接続済み：${state.online.provider}`
-        : '現在はサーバー未接続です。外部への送信は行われません。';
+        : getOnlineAdapter().isConfigured
+          ? 'オンライン接続は準備済みです。同意後に成績を送信します。'
+          : '現在はサーバー未接続です。外部への送信は行われません。';
     }
-    if (els.profileSaveMessage) els.profileSaveMessage.textContent = '';
+    if (els.profileSaveButton) {
+      els.profileSaveButton.textContent = complete ? '同意設定を保存' : 'プロフィールを決定';
+      els.profileSaveButton.classList.toggle('off', complete && consentLocked);
+    }
+    els.profileBackButton?.classList.toggle('off', !complete);
+    if (els.profileSaveMessage) {
+      els.profileSaveMessage.textContent = '';
+      els.profileSaveMessage.classList.remove('error', 'success');
+    }
+  }
+
+  function setProfileMessage(message, type = '') {
+    if (!els.profileSaveMessage) return;
+    els.profileSaveMessage.textContent = message;
+    els.profileSaveMessage.classList.remove('error', 'success');
+    if (type) els.profileSaveMessage.classList.add(type);
   }
 
   function saveProfile() {
-    const rawNickname = els.nicknameInput?.value || '';
-    const nickname = sanitizeNickname(rawNickname);
-    state.online.nickname = nickname;
-    state.online.consent = Boolean(els.rankingConsentInput?.checked);
+    const firstSetup = !state.online.profileComplete;
+    if (firstSetup) {
+      const result = validateNickname(els.nicknameInput?.value || '');
+      if (!result.ok) {
+        setProfileMessage(result.message, 'error');
+        els.nicknameInput?.focus();
+        return;
+      }
+      state.online.nickname = result.value;
+      state.online.profileComplete = true;
+      state.online.nicknameLocked = true;
+    }
+
+    if (!state.online.consentLocked && els.rankingConsentInput?.checked) {
+      state.online.consent = true;
+      state.online.consentLocked = true;
+    }
     state.online.updatedAt = new Date().toISOString();
     const adapter = getOnlineAdapter();
     state.online.provider = adapter.isConfigured ? adapter.provider : 'none';
-    state.online.enabled = Boolean(adapter.isConfigured && state.online.consent);
+    state.online.enabled = Boolean(adapter.isConfigured && state.online.consent && state.online.profileComplete);
     saveState();
-    renderProfile();
     updateTopInfo();
-    if (els.profileSaveMessage) {
-      els.profileSaveMessage.textContent = nickname === String(rawNickname).normalize('NFKC').trim()
-        ? '保存しました。'
-        : `使用できる文字に整えて「${nickname}」として保存しました。`;
-    }
-  }
 
-  function resetProfile() {
-    const ok = window.confirm('プロフィールと端末IDを初期化します。学習データは残ります。よろしいですか。');
-    if (!ok) return;
-    const now = new Date().toISOString();
-    state.online = {
-      ...structuredCloneSafe(DEFAULT_STATE.online),
-      playerId: generatePlayerId(),
-      createdAt: now,
-      updatedAt: now
-    };
-    saveState();
+    if (firstSetup) {
+      goHome();
+      return;
+    }
     renderProfile();
-    updateTopInfo();
-    if (els.profileSaveMessage) els.profileSaveMessage.textContent = 'プロフィールを初期化しました。';
+    setProfileMessage('保存しました。', 'success');
   }
 
   function openRanking() {
     renderRanking();
     showScreen('ranking');
+    refreshOnlineRanking();
   }
 
   function renderRanking() {
-    if (els.rankingPlayerName) els.rankingPlayerName.textContent = state.online.nickname;
+    if (els.rankingPlayerName) els.rankingPlayerName.textContent = state.online.nickname || '未設定';
     if (els.rankingCurrentRate) els.rankingCurrentRate.textContent = formatRate(state.player.rating);
     if (els.rankingHighestRate) els.rankingHighestRate.textContent = formatRate(Math.max(state.player.highestRating, state.player.rating));
     if (els.rankingLearnedCount) els.rankingLearnedCount.textContent = `${state.learnedTypes.length} / ${CURRICULUM.length}`;
@@ -1983,14 +2076,96 @@
       els.rankingConnectionBadge.textContent = state.online.enabled ? 'オンライン' : '端末内';
       els.rankingConnectionBadge.classList.toggle('online', state.online.enabled);
     }
+    renderRankingPosition();
     if (els.rankingOnlineStatus) {
       els.rankingOnlineStatus.textContent = state.online.enabled
-        ? `ランキングへ接続しています。最終同期：${state.online.lastSyncAt || '未同期'}`
+        ? `最終同期：${state.online.lastSyncAt ? formatHistoryDate(state.online.lastSyncAt) : '未同期'}`
         : state.online.consent
-          ? '公開への同意は保存済みです。バックエンド接続後に、成績送信を開始できます。'
-          : 'バックエンド未接続のため、現在は端末内記録のみ表示しています。プロフィールで公開同意を設定できます。';
+          ? '公開への同意は保存済みです。接続設定後に成績送信を開始します。'
+          : getOnlineAdapter().isConfigured
+            ? 'トップ200は閲覧できます。現在順位を記録するには設定画面で公開に同意してください。'
+            : 'バックエンド未接続です。枠をクリックするとランキング画面の動作を確認できます。';
     }
     renderRankingRecentList();
+  }
+
+  function renderRankingPosition() {
+    const rank = Number(state.online.currentRank);
+    const total = Number(state.online.totalPlayers);
+    if (!els.rankingPosition) return;
+    els.rankingPosition.textContent = Number.isFinite(rank) && rank > 0 && Number.isFinite(total) && total > 0
+      ? `${formatRate(rank)}位／${formatRate(total)}位中`
+      : `—位／${Number.isFinite(total) && total > 0 ? formatRate(total) : '—'}位中`;
+  }
+
+  async function refreshOnlineRanking(options = {}) {
+    const adapter = getOnlineAdapter();
+    if (!adapter.isConfigured) {
+      if (options.renderOverlay) renderRankingOverlay([], 'オンラインランキングはまだ接続されていません。');
+      return;
+    }
+    if (options.renderOverlay && els.rankingOverlayStatus) els.rankingOverlayStatus.textContent = 'ランキングを読み込んでいます。';
+    const result = await adapter.fetchRanking({ playerId: state.online.playerId, limit: 200 });
+    if (!result.ok) {
+      state.online.lastSyncStatus = result.code || 'error';
+      saveState();
+      if (options.renderOverlay) renderRankingOverlay([], result.message || 'ランキングを読み込めませんでした。');
+      if (els.rankingOnlineStatus) els.rankingOnlineStatus.textContent = result.message || 'ランキングへ接続できませんでした。';
+      return;
+    }
+    state.online.currentRank = Number.isFinite(Number(result.currentRank)) ? Number(result.currentRank) : null;
+    state.online.totalPlayers = Number.isFinite(Number(result.totalPlayers)) ? Number(result.totalPlayers) : null;
+    state.online.lastSyncAt = new Date().toISOString();
+    state.online.lastSyncStatus = 'ok';
+    saveState();
+    renderRankingPosition();
+    if (els.rankingOnlineStatus) els.rankingOnlineStatus.textContent = `最終同期：${formatHistoryDate(state.online.lastSyncAt)}`;
+    if (options.renderOverlay) renderRankingOverlay(Array.isArray(result.entries) ? result.entries.slice(0, 200) : [], '');
+  }
+
+  function openRankingOverlay() {
+    if (!els.rankingOverlay) return;
+    els.rankingOverlay.classList.remove('off');
+    document.body.classList.add('overlay-open');
+    renderRankingOverlay([], 'ランキングを読み込んでいます。');
+    refreshOnlineRanking({ renderOverlay: true });
+  }
+
+  function closeRankingOverlay() {
+    els.rankingOverlay?.classList.add('off');
+    document.body.classList.remove('overlay-open');
+  }
+
+  function renderRankingOverlay(entries, message) {
+    if (els.rankingOverlayStatus) {
+      els.rankingOverlayStatus.textContent = message || (entries.length ? `1位から${Math.min(200, entries.length)}位まで表示しています。` : 'ランキング記録はまだありません。');
+    }
+    if (!els.rankingOverlayList) return;
+    els.rankingOverlayList.innerHTML = '';
+    for (const entry of entries) {
+      const row = document.createElement('div');
+      const current = Boolean(entry.isCurrentPlayer || entry.playerId === state.online.playerId);
+      row.className = `ranking-overlay-item${current ? ' current-player' : ''}`;
+      row.innerHTML = `
+        <strong class="ranking-overlay-rank">${escapeHtml(formatRate(entry.rank || 0))}位</strong>
+        <span class="ranking-overlay-name">${escapeHtml(entry.nickname || 'プレイヤー')}</span>
+        <strong class="ranking-overlay-rate">${escapeHtml(formatRate(entry.rating || 0))}</strong>
+      `;
+      els.rankingOverlayList.appendChild(row);
+    }
+  }
+
+  async function syncLatestRanking() {
+    const adapter = getOnlineAdapter();
+    if (!state.online.enabled || !state.online.consent || !adapter.isConfigured) return;
+    const result = await adapter.submitRanking(buildRankingSubmission());
+    state.online.lastSyncAt = new Date().toISOString();
+    state.online.lastSyncStatus = result.ok ? 'ok' : (result.code || 'error');
+    if (result.ok) {
+      state.online.currentRank = Number.isFinite(Number(result.currentRank)) ? Number(result.currentRank) : state.online.currentRank;
+      state.online.totalPlayers = Number.isFinite(Number(result.totalPlayers)) ? Number(result.totalPlayers) : state.online.totalPlayers;
+    }
+    saveState();
   }
 
   function renderRankingRecentList() {
@@ -2067,7 +2242,36 @@
     setRadioValue('operationOrder', state.settings.operationOrder || 'padFirst');
     setRadioValue('formulaFont', state.settings.formulaFont);
     setRadioValue('sound', state.settings.sound ? 'on' : 'off');
+    renderSettingsConsent();
     showScreen('settings');
+  }
+
+  function renderSettingsConsent() {
+    if (!els.settingsRankingConsentInput) return;
+    const locked = Boolean(state.online.consentLocked || state.online.consent);
+    els.settingsRankingConsentInput.checked = Boolean(state.online.consent);
+    els.settingsRankingConsentInput.disabled = locked;
+    els.settingsConsentNote.textContent = locked
+      ? '公開への同意は保存済みです。アプリデータをリセットするまで解除できません。'
+      : '同意は任意です。同意後は、アプリデータをリセットするまで解除できません。';
+  }
+
+  function saveRankingConsentFromSettings() {
+    if (!els.settingsRankingConsentInput || state.online.consentLocked) return;
+    if (!els.settingsRankingConsentInput.checked) return;
+    const ok = window.confirm('オンラインランキングへの公開に同意しますか。同意後は、アプリデータをリセットするまで解除できません。');
+    if (!ok) {
+      els.settingsRankingConsentInput.checked = false;
+      return;
+    }
+    state.online.consent = true;
+    state.online.consentLocked = true;
+    const adapter = getOnlineAdapter();
+    state.online.provider = adapter.isConfigured ? adapter.provider : 'none';
+    state.online.enabled = Boolean(adapter.isConfigured && state.online.profileComplete);
+    state.online.updatedAt = new Date().toISOString();
+    saveState();
+    renderSettingsConsent();
   }
 
   function saveSettingsFromForm() {
@@ -2135,17 +2339,25 @@
     }
   }
 
-  function resetData() {
-    const ok = window.confirm('レートと学習データをリセットします。よろしいですか。');
+  async function resetData() {
+    const ok = window.confirm('表示名・公開同意・レート・学習記録・設定をすべてリセットします。この操作は取り消せません。よろしいですか。');
     if (!ok) return;
-    const settings = structuredCloneSafe(state.settings);
-    const online = structuredCloneSafe(state.online);
+    const adapter = getOnlineAdapter();
+    if (adapter.isConfigured && state.online.consent && state.online.playerId) {
+      const deleted = await adapter.deletePlayerData(state.online.playerId);
+      if (!deleted.ok) {
+        window.alert(deleted.message || 'オンライン側のデータを削除できませんでした。通信状態を確認して、もう一度リセットしてください。');
+        return;
+      }
+    }
+    for (const key of [STORAGE_KEY, ...LEGACY_STORAGE_KEYS]) localStorage.removeItem(key);
     state = migrateState(DEFAULT_STATE);
-    state.settings = settings;
-    state.online = online;
+    session = createEmptySession();
     saveState();
     applySettings();
-    goHome();
+    renderProfile();
+    showScreen('profile');
+    window.setTimeout(() => els.nicknameInput?.focus(), 0);
   }
 
   function goHome() {
@@ -2271,6 +2483,7 @@
     els.answerDisplay.classList.remove('answer-correct', 'answer-wrong');
     els.formula.classList.remove('formula-wrong');
     els.gameCard?.classList.remove('wrong-nudge');
+    triggerPadAnswerEffect(correct);
     void els.effectLayer.offsetWidth;
 
     if (correct) {
@@ -2293,6 +2506,20 @@
       els.formula.classList.remove('formula-wrong');
       els.gameCard?.classList.remove('wrong-nudge');
     }, 240);
+  }
+
+  function triggerPadAnswerEffect(correct) {
+    const visible = Boolean(state.settings.handwritingPad && !session.padCollapsed && els.padPanel && !els.padPanel.classList.contains('off'));
+    if (!visible || !els.padAnswerEffect) return;
+    if (padEffectTimer) window.clearTimeout(padEffectTimer);
+    els.padAnswerEffect.textContent = correct ? '○' : '×';
+    els.padAnswerEffect.className = `pad-answer-effect show ${correct ? 'correct' : 'wrong'}`;
+    void els.padAnswerEffect.offsetWidth;
+    padEffectTimer = window.setTimeout(() => {
+      els.padAnswerEffect.className = 'pad-answer-effect';
+      els.padAnswerEffect.textContent = '';
+      padEffectTimer = null;
+    }, correct ? 620 : 700);
   }
 
   function applyPadVisibility() {
@@ -2465,12 +2692,16 @@
     els.rankingButton?.addEventListener('click', openRanking);
     els.profileSaveButton?.addEventListener('click', saveProfile);
     els.profileBackButton?.addEventListener('click', goHome);
-    els.profileResetButton?.addEventListener('click', resetProfile);
     els.rankingBackButton?.addEventListener('click', goHome);
     els.rankingProfileButton?.addEventListener('click', openProfile);
+    els.rankingOnlineCard?.addEventListener('click', openRankingOverlay);
+    els.rankingOverlay?.addEventListener('click', closeRankingOverlay);
+    els.settingsRankingConsentInput?.addEventListener('change', saveRankingConsentFromSettings);
     els.nicknameInput?.addEventListener('input', () => {
-      if (els.profilePreviewName) els.profilePreviewName.textContent = sanitizeNickname(els.nicknameInput.value);
-      if (els.profileSaveMessage) els.profileSaveMessage.textContent = '';
+      if (state.online.profileComplete) return;
+      const normalized = normalizeNickname(els.nicknameInput.value);
+      if (els.profilePreviewName) els.profilePreviewName.textContent = normalized || '未設定';
+      setProfileMessage('');
     });
     els.homeButton.addEventListener('click', goHome);
     els.pauseButton.addEventListener('click', pauseGame);
@@ -2494,7 +2725,8 @@
     attachEvents();
     setupCanvas();
     applySettings();
-    showScreen('home');
+    if (state.online.profileComplete) showScreen('home');
+    else openProfile();
   }
 
   init();
@@ -2505,8 +2737,11 @@
     reset: () => {
       for (const key of [STORAGE_KEY, ...LEGACY_STORAGE_KEYS]) localStorage.removeItem(key);
       state = loadState();
+      session = createEmptySession();
       applySettings();
-      goHome();
+      clearPad();
+      if (state.online.profileComplete) goHome();
+      else openProfile();
     },
     version: APP_VERSION,
     getRankingSubmission: () => structuredCloneSafe(buildRankingSubmission()),
