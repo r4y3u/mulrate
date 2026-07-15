@@ -1,7 +1,9 @@
 (() => {
   'use strict';
 
-  const STORAGE_KEY = 'mulrate_v1_0_0_beta18_state';
+  const APP_VERSION = '2.0.0-alpha.1';
+  const STORAGE_KEY = 'mulrate_v2_0_0_alpha1_state';
+  const LEGACY_STORAGE_KEYS = ['mulrate_v1_0_0_beta18_state'];
   const MAX_RATE = 99999999;
   const SET_SIZE = 10;
   const ANSWER_EPSILON = 1e-9;
@@ -23,10 +25,32 @@
     { id: 'A-3', label: 'ばらばら', order: 'random' }
   ];
 
+  function getOnlineAdapter() {
+    return window.MulRateOnlineAdapter || {
+      provider: 'none',
+      isConfigured: false,
+      submitRanking: async () => ({ ok: false, code: 'NOT_CONFIGURED' }),
+      fetchRanking: async () => ({ ok: false, code: 'NOT_CONFIGURED', entries: [] }),
+      deletePlayerData: async () => ({ ok: false, code: 'NOT_CONFIGURED' })
+    };
+  }
+
   const DEFAULT_STATE = {
+    schemaVersion: 2,
     player: {
       rating: 300,
       highestRating: 300
+    },
+    online: {
+      enabled: false,
+      provider: 'none',
+      playerId: '',
+      nickname: 'プレイヤー',
+      consent: false,
+      createdAt: '',
+      updatedAt: '',
+      lastSyncAt: '',
+      lastSyncStatus: 'offline'
     },
     settings: {
       keypadLayout: 'normal',
@@ -62,6 +86,8 @@
     pauseScreen: document.getElementById('pauseScreen'),
     settingsScreen: document.getElementById('settingsScreen'),
     learnedScreen: document.getElementById('learnedScreen'),
+    profileScreen: document.getElementById('profileScreen'),
+    rankingScreen: document.getElementById('rankingScreen'),
     homeRate: document.getElementById('homeRate'),
     homePoint: document.getElementById('homePoint'),
     homeDetail: document.getElementById('homeDetail'),
@@ -71,6 +97,27 @@
     learnedList: document.getElementById('learnedList'),
     learnedBackButton: document.getElementById('learnedBackButton'),
     settingsButton: document.getElementById('settingsButton'),
+    profileButton: document.getElementById('profileButton'),
+    rankingButton: document.getElementById('rankingButton'),
+    nicknameInput: document.getElementById('nicknameInput'),
+    rankingConsentInput: document.getElementById('rankingConsentInput'),
+    profilePreviewName: document.getElementById('profilePreviewName'),
+    profileCode: document.getElementById('profileCode'),
+    profileSyncState: document.getElementById('profileSyncState'),
+    profileSaveMessage: document.getElementById('profileSaveMessage'),
+    profileSaveButton: document.getElementById('profileSaveButton'),
+    profileBackButton: document.getElementById('profileBackButton'),
+    profileResetButton: document.getElementById('profileResetButton'),
+    rankingPlayerName: document.getElementById('rankingPlayerName'),
+    rankingConnectionBadge: document.getElementById('rankingConnectionBadge'),
+    rankingCurrentRate: document.getElementById('rankingCurrentRate'),
+    rankingHighestRate: document.getElementById('rankingHighestRate'),
+    rankingLearnedCount: document.getElementById('rankingLearnedCount'),
+    rankingCompletedSets: document.getElementById('rankingCompletedSets'),
+    rankingOnlineStatus: document.getElementById('rankingOnlineStatus'),
+    rankingRecentList: document.getElementById('rankingRecentList'),
+    rankingProfileButton: document.getElementById('rankingProfileButton'),
+    rankingBackButton: document.getElementById('rankingBackButton'),
     questionCounter: document.getElementById('questionCounter'),
     gamePoint: document.getElementById('gamePoint'),
     messageArea: document.getElementById('messageArea'),
@@ -359,6 +406,8 @@
   function createEmptySession() {
     return {
       phase: 'idle',
+      sessionId: '',
+      startedAtIso: '',
       questions: [],
       currentIndex: 0,
       retryQueue: [],
@@ -373,6 +422,7 @@
       practiceTypeId: null,
       padCollapsed: true,
       padBaseProblem: null,
+      resumePadAfterPause: false,
       lastDelta: 0,
       lastOutcome: 'stay',
       result: null
@@ -381,19 +431,26 @@
 
   function loadState() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return structuredCloneSafe(DEFAULT_STATE);
-      const parsed = JSON.parse(raw);
-      return migrateState(parsed);
+      for (const key of [STORAGE_KEY, ...LEGACY_STORAGE_KEYS]) {
+        const raw = localStorage.getItem(key);
+        if (!raw) continue;
+        const migrated = migrateState(JSON.parse(raw));
+        if (key !== STORAGE_KEY) localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+        return migrated;
+      }
+      return migrateState(DEFAULT_STATE);
     } catch (error) {
       console.warn('Failed to load state:', error);
-      return structuredCloneSafe(DEFAULT_STATE);
+      return migrateState(DEFAULT_STATE);
     }
   }
 
   function migrateState(value) {
     const next = structuredCloneSafe(DEFAULT_STATE);
+    const now = new Date().toISOString();
+    next.schemaVersion = 2;
     next.player = { ...next.player, ...(value.player || {}) };
+    next.online = { ...next.online, ...(value.online || {}) };
     next.settings = { ...next.settings, ...(value.settings || {}) };
     next.progress = { ...next.progress, ...(value.progress || {}) };
     next.mastery = value.mastery || {};
@@ -405,6 +462,14 @@
     next.progress.patternStayCount = Math.max(0, Math.trunc(next.progress.patternStayCount || 0));
     next.player.rating = clamp(Math.round(next.player.rating || 300), 0, MAX_RATE);
     next.player.highestRating = clamp(Math.round(next.player.highestRating || next.player.rating), 0, MAX_RATE);
+    next.online.playerId = String(next.online.playerId || generatePlayerId());
+    next.online.nickname = sanitizeNickname(next.online.nickname || value.player?.nickname || 'プレイヤー');
+    next.online.consent = Boolean(next.online.consent);
+    next.online.createdAt = next.online.createdAt || now;
+    next.online.updatedAt = next.online.updatedAt || now;
+    const adapter = getOnlineAdapter();
+    next.online.provider = adapter.isConfigured ? adapter.provider : 'none';
+    next.online.enabled = Boolean(adapter.isConfigured && next.online.consent);
     next.learnedTypes = repairLearnedTypes(next);
     return next;
   }
@@ -442,6 +507,23 @@
 
   function structuredCloneSafe(obj) {
     return JSON.parse(JSON.stringify(obj));
+  }
+
+  function generatePlayerId() {
+    if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+    const random = Math.random().toString(36).slice(2, 12);
+    return `local-${Date.now().toString(36)}-${random}`;
+  }
+
+  function shortPlayerCode(playerId) {
+    return String(playerId || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase().padEnd(8, '-');
+  }
+
+  function sanitizeNickname(value) {
+    const normalized = String(value || '').normalize('NFKC').replace(/[\u0000-\u001f\u007f]/g, '').trim().replace(/\s+/g, ' ');
+    const allowed = Array.from(normalized).filter((char) => /[\p{L}\p{N}_・ー\- ]/u.test(char));
+    const result = allowed.slice(0, 12).join('').trim();
+    return result || 'プレイヤー';
   }
 
   function randInt(min, max) {
@@ -773,6 +855,8 @@
     const plans = practiceTypeId ? Array(SET_SIZE).fill(practiceTypeId) : buildQuestionPlan();
     session = createEmptySession();
     session.phase = 'playing';
+    session.sessionId = generatePlayerId();
+    session.startedAtIso = new Date().toISOString();
     session.practiceMode = Boolean(practiceTypeId);
     session.practiceTypeId = practiceTypeId;
     // 手書きパッドは、必要なときに明示的に開く。
@@ -878,6 +962,7 @@
     session.input = '';
     session.locked = false;
     updateOperationState();
+    closePadForNavTransition(false);
     const summary = summarizeSession(false);
     const provisional = previewRateResult(summary);
     els.questionCounter.textContent = '結果';
@@ -991,8 +1076,11 @@
       state.learnedTypes = repairLearnedTypes(state);
     }
     rememberRecentProblems(session.questions);
+    const finishedAt = new Date().toISOString();
+    const verification = createSessionVerification(finishedAt);
     state.history.push({
-      date: new Date().toISOString(),
+      date: finishedAt,
+      sessionId: session.sessionId,
       before,
       after,
       delta: after - before,
@@ -1004,14 +1092,54 @@
       typeId: session.result.typeBefore,
       pattern: session.result.patternBefore,
       outcome,
-      practiceMode: session.practiceMode
+      practiceMode: session.practiceMode,
+      verification
     });
     state.history = state.history.slice(-50);
     state.progress.completedSets += 1;
     saveState();
   }
 
+  function createSessionVerification(finishedAt) {
+    const items = session.questions.map((problem) => ({
+      typeId: problem.typeId,
+      left: problem.left,
+      right: problem.right,
+      firstAnswer: problem.firstAnswer,
+      retryAnswer: problem.retryAnswer,
+      firstTime: roundForProof(problem.firstTime),
+      retryTime: roundForProof(problem.retryTime),
+      initialCorrect: Boolean(problem.initialCorrect),
+      finalCorrect: Boolean(problem.finalCorrect)
+    }));
+    const digestSource = items.map((item) => [item.typeId, item.left, item.right, item.firstAnswer, item.retryAnswer, item.firstTime, item.retryTime].join(':')).join('|');
+    return {
+      version: 1,
+      appVersion: APP_VERSION,
+      sessionId: session.sessionId,
+      startedAt: session.startedAtIso,
+      finishedAt,
+      durationMs: Math.max(0, Math.round(performance.now() - session.startedAt)),
+      problemDigest: hashText(digestSource),
+      items
+    };
+  }
+
+  function roundForProof(value) {
+    return Number.isFinite(value) ? Math.round(value * 1000) / 1000 : null;
+  }
+
+  function hashText(text) {
+    let hash = 2166136261;
+    for (let i = 0; i < text.length; i++) {
+      hash ^= text.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(16).padStart(8, '0');
+  }
+
   function renderFinalResult() {
+    closePadForNavTransition(false);
     const summary = summarizeSession(true);
     const result = session.result || { ratingBefore: state.player.rating, ratingAfter: state.player.rating, delta: 0, loss: 0 };
     const delta = result.delta;
@@ -1730,17 +1858,19 @@
 
   function showScreen(name) {
     els.app.dataset.screen = name;
-    for (const cls of ['screen-home', 'screen-game', 'screen-pause', 'screen-settings', 'screen-learned']) els.app.classList.remove(cls);
+    for (const cls of ['screen-home', 'screen-game', 'screen-pause', 'screen-settings', 'screen-learned', 'screen-profile', 'screen-ranking']) els.app.classList.remove(cls);
     els.app.classList.add(`screen-${name}`);
-    for (const screen of [els.homeScreen, els.gameScreen, els.pauseScreen, els.settingsScreen, els.learnedScreen]) {
-      screen.classList.remove('active');
+    for (const screen of [els.homeScreen, els.gameScreen, els.pauseScreen, els.settingsScreen, els.learnedScreen, els.profileScreen, els.rankingScreen]) {
+      screen?.classList.remove('active');
     }
     const active = {
       home: els.homeScreen,
       game: els.gameScreen,
       pause: els.pauseScreen,
       settings: els.settingsScreen,
-      learned: els.learnedScreen
+      learned: els.learnedScreen,
+      profile: els.profileScreen,
+      ranking: els.rankingScreen
     }[name];
     active?.classList.add('active');
 
@@ -1753,7 +1883,8 @@
   function updateTopInfo(options = {}) {
     const rate = formatRate(state.player.rating);
     const highestRate = Math.max(state.player.highestRating || 0, state.player.rating || 0);
-    els.statusText.textContent = `レート：${rate}`;
+    const nickname = state.online.nickname === 'プレイヤー' ? '' : `${state.online.nickname}｜`;
+    els.statusText.textContent = `${nickname}レート：${rate}`;
     if (options.animateHomeRate) {
       animateHomeRate(highestRate);
     } else if (!els.homeScreen.classList.contains('active')) {
@@ -1782,6 +1913,150 @@
         setHomeRate(final);
       }
     }, 50);
+  }
+
+  function openProfile() {
+    renderProfile();
+    showScreen('profile');
+  }
+
+  function renderProfile() {
+    if (els.nicknameInput) els.nicknameInput.value = state.online.nickname;
+    if (els.rankingConsentInput) els.rankingConsentInput.checked = Boolean(state.online.consent);
+    if (els.profilePreviewName) els.profilePreviewName.textContent = state.online.nickname;
+    if (els.profileCode) els.profileCode.textContent = `端末ID：${shortPlayerCode(state.online.playerId)}`;
+    if (els.profileSyncState) {
+      els.profileSyncState.textContent = state.online.enabled
+        ? `接続済み：${state.online.provider}`
+        : '現在はサーバー未接続です。外部への送信は行われません。';
+    }
+    if (els.profileSaveMessage) els.profileSaveMessage.textContent = '';
+  }
+
+  function saveProfile() {
+    const rawNickname = els.nicknameInput?.value || '';
+    const nickname = sanitizeNickname(rawNickname);
+    state.online.nickname = nickname;
+    state.online.consent = Boolean(els.rankingConsentInput?.checked);
+    state.online.updatedAt = new Date().toISOString();
+    const adapter = getOnlineAdapter();
+    state.online.provider = adapter.isConfigured ? adapter.provider : 'none';
+    state.online.enabled = Boolean(adapter.isConfigured && state.online.consent);
+    saveState();
+    renderProfile();
+    updateTopInfo();
+    if (els.profileSaveMessage) {
+      els.profileSaveMessage.textContent = nickname === String(rawNickname).normalize('NFKC').trim()
+        ? '保存しました。'
+        : `使用できる文字に整えて「${nickname}」として保存しました。`;
+    }
+  }
+
+  function resetProfile() {
+    const ok = window.confirm('プロフィールと端末IDを初期化します。学習データは残ります。よろしいですか。');
+    if (!ok) return;
+    const now = new Date().toISOString();
+    state.online = {
+      ...structuredCloneSafe(DEFAULT_STATE.online),
+      playerId: generatePlayerId(),
+      createdAt: now,
+      updatedAt: now
+    };
+    saveState();
+    renderProfile();
+    updateTopInfo();
+    if (els.profileSaveMessage) els.profileSaveMessage.textContent = 'プロフィールを初期化しました。';
+  }
+
+  function openRanking() {
+    renderRanking();
+    showScreen('ranking');
+  }
+
+  function renderRanking() {
+    if (els.rankingPlayerName) els.rankingPlayerName.textContent = state.online.nickname;
+    if (els.rankingCurrentRate) els.rankingCurrentRate.textContent = formatRate(state.player.rating);
+    if (els.rankingHighestRate) els.rankingHighestRate.textContent = formatRate(Math.max(state.player.highestRating, state.player.rating));
+    if (els.rankingLearnedCount) els.rankingLearnedCount.textContent = `${state.learnedTypes.length} / ${CURRICULUM.length}`;
+    if (els.rankingCompletedSets) els.rankingCompletedSets.textContent = formatRate(state.progress.completedSets || 0);
+    if (els.rankingConnectionBadge) {
+      els.rankingConnectionBadge.textContent = state.online.enabled ? 'オンライン' : '端末内';
+      els.rankingConnectionBadge.classList.toggle('online', state.online.enabled);
+    }
+    if (els.rankingOnlineStatus) {
+      els.rankingOnlineStatus.textContent = state.online.enabled
+        ? `ランキングへ接続しています。最終同期：${state.online.lastSyncAt || '未同期'}`
+        : state.online.consent
+          ? '公開への同意は保存済みです。バックエンド接続後に、成績送信を開始できます。'
+          : 'バックエンド未接続のため、現在は端末内記録のみ表示しています。プロフィールで公開同意を設定できます。';
+    }
+    renderRankingRecentList();
+  }
+
+  function renderRankingRecentList() {
+    if (!els.rankingRecentList) return;
+    els.rankingRecentList.innerHTML = '';
+    const recent = state.history.slice(-8).reverse();
+    if (!recent.length) {
+      const empty = document.createElement('p');
+      empty.className = 'muted-text';
+      empty.textContent = 'まだ記録がありません。1セット終えると表示されます。';
+      els.rankingRecentList.appendChild(empty);
+      return;
+    }
+    for (const item of recent) {
+      const row = document.createElement('div');
+      row.className = 'ranking-recent-item';
+      const delta = Number(item.delta || 0);
+      const sign = delta > 0 ? '+' : '';
+      row.innerHTML = `
+        <div>
+          <strong>${escapeHtml(formatHistoryDate(item.date))}</strong>
+          <span>${escapeHtml(findType(item.typeId)?.label || item.typeId || 'トレーニング')}・初回 ${Number(item.firstCorrect || 0)} / ${SET_SIZE}</span>
+        </div>
+        <strong class="${delta < 0 ? 'negative' : 'positive'}">${sign}${escapeHtml(formatRate(delta))}</strong>
+      `;
+      els.rankingRecentList.appendChild(row);
+    }
+  }
+
+  function formatHistoryDate(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '日時不明';
+    return new Intl.DateTimeFormat('ja-JP', {
+      month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'
+    }).format(date);
+  }
+
+  function buildRankingSubmission() {
+    const latest = state.history.at(-1) || null;
+    return {
+      schemaVersion: 1,
+      appVersion: APP_VERSION,
+      player: {
+        playerId: state.online.playerId,
+        nickname: state.online.nickname
+      },
+      consent: Boolean(state.online.consent),
+      metrics: {
+        currentRating: state.player.rating,
+        highestRating: Math.max(state.player.highestRating, state.player.rating),
+        learnedCount: state.learnedTypes.length,
+        completedSets: state.progress.completedSets || 0
+      },
+      latestSession: latest ? {
+        date: latest.date,
+        before: latest.before,
+        after: latest.after,
+        delta: latest.delta,
+        firstCorrect: latest.firstCorrect,
+        finalCorrect: latest.finalCorrect,
+        typeId: latest.typeId,
+        pattern: latest.pattern,
+        outcome: latest.outcome,
+        verification: latest.verification || null
+      } : null
+    };
   }
 
   function openSettings() {
@@ -1864,8 +2139,10 @@
     const ok = window.confirm('レートと学習データをリセットします。よろしいですか。');
     if (!ok) return;
     const settings = structuredCloneSafe(state.settings);
-    state = structuredCloneSafe(DEFAULT_STATE);
+    const online = structuredCloneSafe(state.online);
+    state = migrateState(DEFAULT_STATE);
     state.settings = settings;
+    state.online = online;
     saveState();
     applySettings();
     goHome();
@@ -1884,9 +2161,20 @@
     showScreen('home');
   }
 
+  function closePadForNavTransition(restoreOnResume = false) {
+    if (!state.settings.handwritingPad) return;
+    const wasOpen = !session.padCollapsed;
+    if (restoreOnResume) session.resumePadAfterPause = wasOpen;
+    if (wasOpen) {
+      session.padCollapsed = true;
+      applyPadVisibility();
+    }
+  }
+
   function pauseGame() {
     if (session.phase !== 'playing') return;
     session.pauseStartedAt = performance.now();
+    closePadForNavTransition(true);
     showScreen('pause');
   }
 
@@ -1895,6 +2183,11 @@
     const pausedMs = performance.now() - session.pauseStartedAt;
     session.questionStartedAt += pausedMs;
     showScreen('game');
+    if (session.resumePadAfterPause && state.settings.handwritingPad) {
+      session.padCollapsed = false;
+      session.resumePadAfterPause = false;
+      applyPadVisibility();
+    }
   }
 
   function elapsedSeconds(start) {
@@ -2168,6 +2461,17 @@
     els.learnedButton.addEventListener('click', openLearned);
     els.learnedBackButton.addEventListener('click', goHome);
     els.settingsButton.addEventListener('click', openSettings);
+    els.profileButton?.addEventListener('click', openProfile);
+    els.rankingButton?.addEventListener('click', openRanking);
+    els.profileSaveButton?.addEventListener('click', saveProfile);
+    els.profileBackButton?.addEventListener('click', goHome);
+    els.profileResetButton?.addEventListener('click', resetProfile);
+    els.rankingBackButton?.addEventListener('click', goHome);
+    els.rankingProfileButton?.addEventListener('click', openProfile);
+    els.nicknameInput?.addEventListener('input', () => {
+      if (els.profilePreviewName) els.profilePreviewName.textContent = sanitizeNickname(els.nicknameInput.value);
+      if (els.profileSaveMessage) els.profileSaveMessage.textContent = '';
+    });
     els.homeButton.addEventListener('click', goHome);
     els.pauseButton.addEventListener('click', pauseGame);
     els.resumeButton.addEventListener('click', resumeGame);
@@ -2197,12 +2501,15 @@
 
   window.MulRateDebug = {
     getState: () => structuredCloneSafe(state),
+    getSession: () => structuredCloneSafe(session),
     reset: () => {
-      localStorage.removeItem(STORAGE_KEY);
+      for (const key of [STORAGE_KEY, ...LEGACY_STORAGE_KEYS]) localStorage.removeItem(key);
       state = loadState();
       applySettings();
       goHome();
     },
+    version: APP_VERSION,
+    getRankingSubmission: () => structuredCloneSafe(buildRankingSubmission()),
     curriculum: CURRICULUM.map(({ id, label, point, difficulty, targetSeconds }) => ({ id, label, point, difficulty, targetSeconds })),
     patterns: PATTERNS,
     kukuPatterns: KUKU_PATTERNS

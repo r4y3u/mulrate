@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#0e1d1b">
   <meta name="description" content="MulRate - かけ算の計算力を鍛えるレート制トレーニングアプリ">
-  <title>MulRate v1.0.0 beta.18</title>
+  <title>MulRate v2.0.0 alpha.1</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -41,9 +41,11 @@
                 <strong id="homeDetail">九九 5・2の段</strong>
               </div>
             </div>
-            <div class="home-actions">
-              <button id="startButton" class="primary-button" type="button">スタート</button>
+            <div class="home-actions home-actions-v2">
+              <button id="startButton" class="primary-button home-start-button" type="button">スタート</button>
               <button id="learnedButton" class="secondary-button" type="button">学習済み</button>
+              <button id="rankingButton" class="secondary-button" type="button">記録・ランキング</button>
+              <button id="profileButton" class="secondary-button" type="button">プロフィール</button>
               <button id="settingsButton" class="secondary-button" type="button">設定</button>
             </div>
           </div>
@@ -85,6 +87,70 @@
             <div id="learnedList" class="learned-list"></div>
             <div class="settings-actions">
               <button id="learnedBackButton" class="secondary-button" type="button">初期画面へ</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="profileScreen" class="screen" aria-labelledby="profileTitle">
+          <div class="settings-card compact-card">
+            <h2 id="profileTitle">プロフィール</h2>
+            <p class="muted-text">ランキングや対戦で使う公開名を、この端末に保存します。</p>
+
+            <div class="profile-preview" aria-live="polite">
+              <span>表示名</span>
+              <strong id="profilePreviewName">プレイヤー</strong>
+              <small id="profileCode">端末ID：--------</small>
+            </div>
+
+            <label class="form-label" for="nicknameInput">ニックネーム</label>
+            <input id="nicknameInput" class="text-input" type="text" maxlength="12" autocomplete="off" spellcheck="false" placeholder="12文字以内">
+            <p class="settings-note left-note">文字・数字・ひらがな・カタカナ・漢字を使用できます。チャット機能は設けません。</p>
+
+            <label class="consent-row">
+              <input id="rankingConsentInput" type="checkbox">
+              <span>将来、ランキングへこの表示名と成績を送信することに同意する</span>
+            </label>
+            <p id="profileSyncState" class="status-panel">現在はサーバー未接続です。外部への送信は行われません。</p>
+            <p id="profileSaveMessage" class="settings-note" aria-live="polite"></p>
+
+            <div class="settings-actions">
+              <button id="profileSaveButton" class="primary-button" type="button">保存</button>
+              <button id="profileBackButton" class="secondary-button" type="button">初期画面へ</button>
+            </div>
+            <div class="settings-actions subtle-actions">
+              <button id="profileResetButton" class="danger-button subtle-danger" type="button">プロフィールを初期化</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="rankingScreen" class="screen" aria-labelledby="rankingTitle">
+          <div class="settings-card compact-card">
+            <div class="screen-heading-row">
+              <div>
+                <h2 id="rankingTitle">記録・ランキング</h2>
+                <p id="rankingPlayerName" class="muted-text">プレイヤー</p>
+              </div>
+              <span id="rankingConnectionBadge" class="connection-badge">端末内</span>
+            </div>
+
+            <div class="ranking-metrics" aria-label="現在の記録">
+              <div><span>現在レート</span><strong id="rankingCurrentRate">300</strong></div>
+              <div><span>最高レート</span><strong id="rankingHighestRate">300</strong></div>
+              <div><span>学習済み</span><strong id="rankingLearnedCount">0 / 100</strong></div>
+              <div><span>完了セット</span><strong id="rankingCompletedSets">0</strong></div>
+            </div>
+
+            <div class="ranking-status-card">
+              <strong>オンラインランキング</strong>
+              <p id="rankingOnlineStatus">バックエンド未接続のため、現在は端末内記録のみ表示しています。</p>
+            </div>
+
+            <h3 class="section-subtitle">最近の記録</h3>
+            <div id="rankingRecentList" class="ranking-recent-list"></div>
+
+            <div class="settings-actions">
+              <button id="rankingProfileButton" class="secondary-button" type="button">プロフィール設定</button>
+              <button id="rankingBackButton" class="secondary-button" type="button">初期画面へ</button>
             </div>
           </div>
         </section>
@@ -175,6 +241,7 @@
     </section>
   </div>
 
+  <script src="online-adapter.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

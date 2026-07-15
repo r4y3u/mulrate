@@ -989,3 +989,149 @@ canvas {
     max-width: 30vw;
   }
 }
+
+/* v2.0.0 alpha.1: local profile and ranking foundation. */
+.home-actions-v2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: min(100%, 520px);
+  margin-inline: auto;
+}
+.home-actions-v2 .home-start-button { grid-column: 1 / -1; }
+.home-actions-v2 button { width: 100%; }
+
+.profile-preview {
+  display: grid;
+  gap: 3px;
+  padding: 14px;
+  border-radius: var(--radius-lg);
+  background: rgba(244, 251, 245, 0.08);
+  border: 1px solid var(--line);
+  text-align: center;
+}
+.profile-preview span,
+.profile-preview small { color: var(--muted); font-weight: 720; }
+.profile-preview strong { font-size: clamp(1.5rem, 5dvh, 2.35rem); }
+.profile-preview small { font-size: 0.78rem; letter-spacing: 0.08em; }
+
+.form-label { min-height: 0; margin-top: 2px; color: var(--muted); font-size: 0.86rem; font-weight: 820; }
+.text-input {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px solid rgba(244, 251, 245, 0.28);
+  border-radius: 14px;
+  background: rgba(4, 20, 16, 0.48);
+  color: #fff;
+  outline: none;
+  font-weight: 760;
+}
+.text-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(120, 197, 171, 0.16); }
+.text-input::placeholder { color: rgba(199, 216, 206, 0.58); }
+.left-note { text-align: left; }
+
+.consent-row {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  align-items: start;
+  gap: 10px;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: rgba(244, 251, 245, 0.06);
+  line-height: 1.45;
+}
+.consent-row input { width: 20px; height: 20px; margin-top: 1px; accent-color: var(--accent); }
+
+.status-panel,
+.ranking-status-card {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: rgba(244, 251, 245, 0.06);
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 680;
+  line-height: 1.5;
+}
+.ranking-status-card strong { display: block; margin-bottom: 4px; color: #fff; }
+.ranking-status-card p { margin: 0; }
+
+.screen-heading-row {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.screen-heading-row h2,
+.screen-heading-row p { margin-bottom: 0; }
+.connection-badge {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(244, 251, 245, 0.08);
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 820;
+}
+.connection-badge.online { color: #08231e; background: var(--accent); border-color: transparent; }
+
+.ranking-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.ranking-metrics > div {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: rgba(244, 251, 245, 0.07);
+}
+.ranking-metrics span { color: var(--muted); font-size: 0.78rem; font-weight: 760; }
+.ranking-metrics strong { font-size: clamp(1.15rem, 4dvh, 1.75rem); }
+.section-subtitle { margin: 4px 0 0; font-size: 1rem; }
+.ranking-recent-list { display: grid; gap: 7px; }
+.ranking-recent-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: rgba(244, 251, 245, 0.06);
+}
+.ranking-recent-item > div { min-width: 0; display: grid; gap: 2px; }
+.ranking-recent-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 0.78rem; font-weight: 650; }
+.ranking-recent-item .positive { color: var(--success); }
+.ranking-recent-item .negative { color: var(--danger); }
+
+@media (max-width: 430px) {
+  .home-actions-v2 { gap: 6px; }
+  .home-actions-v2 button { padding-inline: 9px; font-size: 0.84rem; }
+  .ranking-metrics { gap: 6px; }
+  .ranking-metrics > div { padding: 9px; }
+  .ranking-recent-item { padding: 8px 9px; }
+}
+
+/* Profile and ranking do not need the numeric operation window. */
+.app-shell.screen-profile,
+.app-shell.screen-ranking {
+  width: min(100%, 760px);
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-rows: minmax(0, 1fr) !important;
+}
+.app-shell.screen-profile .input-zone,
+.app-shell.screen-ranking .input-zone {
+  display: none;
+}
+.app-shell.screen-profile .nav-window,
+.app-shell.screen-ranking .nav-window {
+  grid-column: 1 !important;
+  grid-row: 1 !important;
+  height: calc(100dvh - max(16px, env(safe-area-inset-top)) - max(16px, env(safe-area-inset-bottom)));
+}
