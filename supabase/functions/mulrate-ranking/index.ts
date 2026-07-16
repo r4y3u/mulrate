@@ -1,5 +1,6 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { isAllowedNickname } from '../_shared/name-filter.ts';
+import { verifyAndCalculateRate } from '../_shared/rate-engine.ts';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SECRET_RE = /^[A-Za-z0-9_-]{32,128}$/;
@@ -81,6 +82,7 @@ function verifyPayload(payload: any): { ok: true; data: any } | { ok: false; cod
   let finalCorrect = 0;
   let firstTimeSum = 0;
   const digestParts: string[] = [];
+  const rateItems: Array<{ typeId: string; left: number; right: number; firstTime: number; initialCorrect: boolean; finalCorrect: boolean }> = [];
   for (const item of proof.items) {
     const left = finite(item.left);
     const right = finite(item.right);
@@ -100,6 +102,14 @@ function verifyPayload(payload: any): { ok: true; data: any } | { ok: false; cod
     if (initial) firstCorrect += 1;
     if (final) finalCorrect += 1;
     firstTimeSum += firstTime;
+    rateItems.push({
+      typeId: String(item.typeId || ''),
+      left,
+      right,
+      firstTime,
+      initialCorrect: initial,
+      finalCorrect: final
+    });
     digestParts.push([item.typeId, item.left, item.right, item.firstAnswer, item.retryAnswer, item.firstTime, item.retryTime].join(':'));
   }
   if (firstTimeSum * 1000 > durationMs! + 10_000) return { ok: false, code: 'TIME_MISMATCH', message: '回答時間が一致しません。' };
@@ -112,7 +122,21 @@ function verifyPayload(payload: any): { ok: true; data: any } | { ok: false; cod
   if (before === null || after === null || delta === null || after !== before + delta || after !== currentRating) {
     return { ok: false, code: 'RATING_MISMATCH', message: 'レート記録が一致しません。' };
   }
-  return { ok: true, data: { playerId, playerSecret, nickname, metrics: { currentRating, highestRating, learnedCount, completedSets }, latest, proof, firstCorrect, finalCorrect, before, after, delta } };
+
+  const serverRate = verifyAndCalculateRate(rateItems, before, proof.rateContext);
+  if (!serverRate.ok) return serverRate;
+  if (serverRate.summary.firstCorrect !== firstCorrect || serverRate.summary.finalCorrect !== finalCorrect) {
+    return { ok: false, code: 'RATE_SUMMARY_MISMATCH', message: 'レート計算用の集計が一致しません。' };
+  }
+  if (String(latest.typeId || '') !== String(proof.rateContext?.typeId || '')
+    || String(latest.pattern || '') !== String(proof.rateContext?.patternId || '')
+    || String(latest.outcome || '') !== serverRate.outcome) {
+    return { ok: false, code: 'PROGRESS_MISMATCH', message: '進行判定がサーバー計算と一致しません。' };
+  }
+  if (delta !== serverRate.appliedDelta || after !== serverRate.ratingAfter) {
+    return { ok: false, code: 'SERVER_RATE_MISMATCH', message: 'レート増減がサーバー計算と一致しません。' };
+  }
+  return { ok: true, data: { playerId, playerSecret, nickname, metrics: { currentRating, highestRating, learnedCount, completedSets }, latest, proof, firstCorrect, finalCorrect, before, after, delta, serverRate } };
 }
 
 Deno.serve(async (req: Request) => {
@@ -160,12 +184,11 @@ Deno.serve(async (req: Request) => {
       if (!checked.ok) return response(req, { ok: false, code: checked.code, message: checked.message }, 400);
       const d = checked.data;
       const authTokenHash = await sha256Hex(d.playerSecret);
-      const { error } = await db.rpc('mulrate_commit_session_v2', {
+      const { error } = await db.rpc('mulrate_commit_session_v3', {
         p_player_id: d.playerId,
         p_nickname: d.nickname,
         p_auth_token_hash: authTokenHash,
-        p_current_rating: d.metrics.currentRating,
-        p_highest_rating: d.metrics.highestRating,
+        p_current_rating: d.serverRate.ratingAfter,
         p_learned_count: d.metrics.learnedCount,
         p_completed_sets: d.metrics.completedSets,
         p_session_id: d.proof.sessionId,
@@ -175,10 +198,17 @@ Deno.serve(async (req: Request) => {
         p_duration_ms: Math.round(d.proof.durationMs),
         p_problem_digest: d.proof.problemDigest,
         p_rating_before: d.before,
-        p_rating_after: d.after,
-        p_rating_delta: d.delta,
+        p_rating_after: d.serverRate.ratingAfter,
+        p_rating_delta: d.serverRate.appliedDelta,
         p_first_correct: d.firstCorrect,
         p_final_correct: d.finalCorrect,
+        p_rate_formula_version: d.serverRate.formulaVersion,
+        p_type_index_before: d.proof.rateContext.typeIndex,
+        p_pattern_index_before: d.proof.rateContext.patternIndex,
+        p_pattern_stay_before: d.proof.rateContext.patternStayCount,
+        p_type_index_after: d.serverRate.nextProgress.typeIndex,
+        p_pattern_index_after: d.serverRate.nextProgress.patternIndex,
+        p_pattern_stay_after: d.serverRate.nextProgress.patternStayCount,
         p_verification_payload: d.proof
       });
       if (error) {
@@ -187,20 +217,28 @@ Deno.serve(async (req: Request) => {
           : raw.includes('PLAYER_AUTH_FAILED') ? 'PLAYER_AUTH_FAILED'
             : raw.includes('RATE_LIMITED') ? 'RATE_LIMITED'
               : raw.includes('STALE_RATING') ? 'STALE_RATING'
-                : raw.includes('NICKNAME_IMMUTABLE') ? 'NICKNAME_IMMUTABLE'
+                : raw.includes('STALE_PROGRESS') ? 'STALE_PROGRESS'
+                  : raw.includes('NICKNAME_IMMUTABLE') ? 'NICKNAME_IMMUTABLE'
                   : 'COMMIT_FAILED';
         const message = code === 'PLAYER_AUTH_FAILED' ? 'この端末IDの認証に失敗しました。'
           : code === 'RATE_LIMITED' ? '短時間の送信回数が多すぎます。しばらくしてから再送します。'
-            : code === 'STALE_RATING' ? 'サーバー上の記録と連続していません。同期状態を確認してください。'
-              : 'ランキング記録を確定できませんでした。';
+            : code === 'STALE_RATING' ? 'サーバー上のレートと連続していません。同期状態を確認してください。'
+              : code === 'STALE_PROGRESS' ? 'サーバー上の進行記録と連続していません。同期状態を確認してください。'
+                : 'ランキング記録を確定できませんでした。';
         return response(req, { ok: false, code, message }, 409);
       }
       const { data: current } = await db.from('mulrate_players').select('updated_at').eq('id', d.playerId).single();
-      const { count: greater } = await db.from('mulrate_players').select('id', { count: 'exact', head: true }).gt('current_rating', d.after);
+      const { count: greater } = await db.from('mulrate_players').select('id', { count: 'exact', head: true }).gt('current_rating', d.serverRate.ratingAfter);
       const { count: earlierTie } = await db.from('mulrate_players').select('id', { count: 'exact', head: true })
-        .eq('current_rating', d.after).lt('updated_at', current?.updated_at ?? new Date().toISOString());
+        .eq('current_rating', d.serverRate.ratingAfter).lt('updated_at', current?.updated_at ?? new Date().toISOString());
       const { count: total } = await db.from('mulrate_players').select('id', { count: 'exact', head: true });
-      return response(req, { currentRank: 1 + (greater ?? 0) + (earlierTie ?? 0), totalPlayers: total ?? 1 });
+      return response(req, {
+        currentRank: 1 + (greater ?? 0) + (earlierTie ?? 0),
+        totalPlayers: total ?? 1,
+        authoritativeRating: d.serverRate.ratingAfter,
+        authoritativeDelta: d.serverRate.appliedDelta,
+        rateFormulaVersion: d.serverRate.formulaVersion
+      });
     }
 
     if (req.method === 'DELETE') {

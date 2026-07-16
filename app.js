@@ -1,9 +1,9 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '2.0.0-alpha.3';
-  const STORAGE_KEY = 'mulrate_v2_0_0_alpha3_state';
-  const LEGACY_STORAGE_KEYS = ['mulrate_v2_0_0_alpha2_state', 'mulrate_v2_0_0_alpha1_state', 'mulrate_v1_0_0_beta18_state'];
+  const APP_VERSION = '2.0.0-alpha.4';
+  const STORAGE_KEY = 'mulrate_v2_0_0_alpha4_state';
+  const LEGACY_STORAGE_KEYS = ['mulrate_v2_0_0_alpha3_state', 'mulrate_v2_0_0_alpha2_state', 'mulrate_v2_0_0_alpha1_state', 'mulrate_v1_0_0_beta18_state'];
   const MAX_RATE = 99999999;
   const SET_SIZE = 10;
   const ANSWER_EPSILON = 1e-9;
@@ -36,7 +36,7 @@
   }
 
   const DEFAULT_STATE = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     player: {
       rating: 300,
       highestRating: 300
@@ -470,7 +470,7 @@
   function migrateState(value) {
     const next = structuredCloneSafe(DEFAULT_STATE);
     const now = new Date().toISOString();
-    next.schemaVersion = 2;
+    next.schemaVersion = 3;
     next.player = { ...next.player, ...(value.player || {}) };
     next.online = { ...next.online, ...(value.online || {}) };
     next.settings = { ...next.settings, ...(value.settings || {}) };
@@ -570,7 +570,13 @@
   }
 
   function isValidQueuedSubmission(value) {
-    return Boolean(value && typeof value === 'object' && /^[0-9a-f-]{36}$/i.test(String(value?.latestSession?.verification?.sessionId || '')));
+    const proof = value?.latestSession?.verification;
+    return Boolean(
+      value && typeof value === 'object'
+      && Number(proof?.version) >= 2
+      && proof?.rateContext?.formulaVersion === 'rate-v1'
+      && /^[0-9a-f-]{36}$/i.test(String(proof?.sessionId || ''))
+    );
   }
 
   function shortPlayerCode(playerId) {
@@ -1130,6 +1136,7 @@
   function applyResultWithoutRendering() {
     if (session.ratingApplied) return;
     const summary = summarizeSession(true);
+    const rateContext = createRateContext();
     const outcome = session.practiceMode ? 'practice' : judgeProgress(summary);
     const before = state.player.rating;
     const rateResult = calculateRateResult(summary, outcome, { practiceMode: session.practiceMode });
@@ -1145,7 +1152,8 @@
       loss: rateResult.loss,
       idealDelta: rateResult.idealDelta,
       patternBefore: currentPattern()?.id || 'A',
-      typeBefore: currentType().id
+      typeBefore: currentType().id,
+      rateContext
     };
     session.ratingApplied = true;
 
@@ -1157,7 +1165,7 @@
     }
     rememberRecentProblems(session.questions);
     const finishedAt = new Date().toISOString();
-    const verification = createSessionVerification(finishedAt);
+    const verification = createSessionVerification(finishedAt, rateContext);
     state.history.push({
       date: finishedAt,
       sessionId: session.sessionId,
@@ -1181,7 +1189,22 @@
     syncLatestRanking();
   }
 
-  function createSessionVerification(finishedAt) {
+  function createRateContext() {
+    const type = currentType();
+    const pattern = currentPattern();
+    return {
+      formulaVersion: 'rate-v1',
+      typeIndex: state.progress.typeIndex,
+      typeId: type.id,
+      patternIndex: state.progress.patternIndex,
+      patternId: pattern?.id || '',
+      patternStayCount: state.progress.patternStayCount,
+      practiceMode: Boolean(session.practiceMode),
+      practiceTypeId: session.practiceTypeId || null
+    };
+  }
+
+  function createSessionVerification(finishedAt, rateContext) {
     const items = session.questions.map((problem) => ({
       typeId: problem.typeId,
       left: problem.left,
@@ -1195,8 +1218,9 @@
     }));
     const digestSource = items.map((item) => [item.typeId, item.left, item.right, item.firstAnswer, item.retryAnswer, item.firstTime, item.retryTime].join(':')).join('|');
     return {
-      version: 1,
+      version: 2,
       appVersion: APP_VERSION,
+      rateContext,
       sessionId: session.sessionId,
       startedAt: session.startedAtIso,
       finishedAt,
@@ -2044,7 +2068,7 @@
     }
     if (els.profileConsentNote) {
       els.profileConsentNote.textContent = consentLocked
-        ? '公開への同意は保存済みです。アプリデータをリセットするまで解除できません。'
+        ? '同意済みです。解除するためには、アプリデータのリセットが必要です。'
         : '同意は任意です。同意しない場合も学習できます。後から設定画面で同意できます。';
     }
     if (els.profileSyncState) {
@@ -2350,7 +2374,7 @@
     els.settingsRankingConsentInput.checked = Boolean(state.online.consent);
     els.settingsRankingConsentInput.disabled = locked;
     els.settingsConsentNote.textContent = locked
-      ? '公開への同意は保存済みです。アプリデータをリセットするまで解除できません。'
+      ? '同意済みです。解除するためには、アプリデータのリセットが必要です。'
       : '同意は任意です。同意後は、アプリデータをリセットするまで解除できません。';
   }
 
@@ -2847,7 +2871,51 @@
     },
     version: APP_VERSION,
     getRankingSubmission: () => structuredCloneSafe(buildRankingSubmission()),
-    curriculum: CURRICULUM.map(({ id, label, point, difficulty, targetSeconds }) => ({ id, label, point, difficulty, targetSeconds })),
+    calculateRateFromProof: ({ items, ratingBefore, rateContext }) => {
+      const progressSnapshot = { ...state.progress };
+      const ratingSnapshot = state.player.rating;
+      const practiceModeSnapshot = session.practiceMode;
+      const practiceTypeIdSnapshot = session.practiceTypeId;
+      try {
+        state.progress.typeIndex = Number(rateContext.typeIndex);
+        state.progress.patternIndex = Number(rateContext.patternIndex);
+        state.progress.patternStayCount = Number(rateContext.patternStayCount);
+        state.player.rating = Number(ratingBefore);
+        session.practiceMode = Boolean(rateContext.practiceMode);
+        session.practiceTypeId = rateContext.practiceTypeId || null;
+        const questions = items.map((item) => ({
+          typeId: item.typeId,
+          left: item.left,
+          right: item.right,
+          firstTime: item.firstTime,
+          retryTime: null,
+          initialCorrect: Boolean(item.initialCorrect),
+          finalCorrect: Boolean(item.finalCorrect),
+          retryCorrect: !item.initialCorrect && Boolean(item.finalCorrect)
+        }));
+        const firstCorrect = questions.filter((item) => item.initialCorrect).length;
+        const finalCorrect = questions.filter((item) => item.finalCorrect).length;
+        const avgFirstTime = average(questions.map((item) => item.firstTime));
+        const targetTime = average(questions.map((item) => effectiveTargetSeconds(findType(item.typeId))));
+        const summary = { questions, firstCorrect, finalCorrect, avgFirstTime, avgFinalTime: avgFirstTime, targetTime, ratingBefore: Number(ratingBefore) };
+        const outcome = session.practiceMode ? 'practice' : judgeProgress(summary);
+        const rawDelta = calculateRateDelta(summary, outcome, { practiceMode: session.practiceMode });
+        const ratingAfter = clamp(Number(ratingBefore) + rawDelta, 0, MAX_RATE);
+        if (!session.practiceMode) updateProgress(outcome);
+        const nextProgress = {
+          typeIndex: state.progress.typeIndex,
+          patternIndex: state.progress.patternIndex,
+          patternStayCount: state.progress.patternStayCount
+        };
+        return { outcome, rawDelta, appliedDelta: ratingAfter - Number(ratingBefore), ratingAfter, nextProgress };
+      } finally {
+        state.progress = progressSnapshot;
+        state.player.rating = ratingSnapshot;
+        session.practiceMode = practiceModeSnapshot;
+        session.practiceTypeId = practiceTypeIdSnapshot;
+      }
+    },
+    curriculum: CURRICULUM.map(({ id, label, point, difficulty, targetSeconds, family, kukuMode, row }) => ({ id, label, point, difficulty, targetSeconds, family, kukuMode, row })),
     patterns: PATTERNS,
     kukuPatterns: KUKU_PATTERNS
   };

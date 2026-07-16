@@ -990,7 +990,7 @@ canvas {
   }
 }
 
-/* v2.0.0 alpha.1 foundation retained through alpha.3. */
+/* v2.0.0 alpha.1 foundation retained through alpha.4. */
 .home-actions-v2 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1136,7 +1136,7 @@ canvas {
   height: calc(100dvh - max(16px, env(safe-area-inset-top)) - max(16px, env(safe-area-inset-bottom)));
 }
 
-/* v2.0.0 alpha.2–alpha.3: required immutable profile, ranking overlay, and pad feedback. */
+/* v2.0.0 alpha.2–alpha.4: required immutable profile, ranking overlay, and pad feedback. */
 .text-input:disabled {
   opacity: 0.72;
   cursor: not-allowed;
