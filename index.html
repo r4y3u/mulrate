@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#0e1d1b">
   <meta name="description" content="MulRate - かけ算の計算力を鍛えるレート制トレーニングアプリ">
-  <title>MulRate v2.0.0 alpha.2</title>
+  <title>MulRate v2.0.0 alpha.3</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -17,7 +17,10 @@
           <div class="brand">MulRate</div>
           <div id="statusText" class="status-text">レート：300</div>
         </div>
-        <button id="pauseButton" class="ghost-button icon-button hidden" type="button" aria-label="一時停止">Ⅱ</button>
+        <div class="topbar-actions">
+          <button id="settingsButton" class="ghost-button icon-button settings-gear hidden" type="button" aria-label="設定を開く" title="設定">⚙</button>
+          <button id="pauseButton" class="ghost-button icon-button hidden" type="button" aria-label="一時停止">Ⅱ</button>
+        </div>
       </header>
 
       <div id="effectLayer" class="effect-layer" aria-hidden="true"></div>
@@ -45,8 +48,6 @@
               <button id="startButton" class="primary-button home-start-button" type="button">スタート</button>
               <button id="learnedButton" class="secondary-button" type="button">学習済み</button>
               <button id="rankingButton" class="secondary-button" type="button">記録・ランキング</button>
-              <button id="profileButton" class="secondary-button" type="button">プロフィール</button>
-              <button id="settingsButton" class="secondary-button" type="button">設定</button>
             </div>
           </div>
         </section>
@@ -98,7 +99,7 @@
                 <p id="profileStepLabel" class="eyebrow">初回設定</p>
                 <h2 id="profileTitle">プロフィール</h2>
               </div>
-              <span id="profileLockBadge" class="connection-badge off">名前固定</span>
+
             </div>
             <p id="profileIntro" class="muted-text">最初に、ランキングや対戦で使う表示名を決めます。</p>
 
@@ -122,7 +123,6 @@
 
             <div class="settings-actions">
               <button id="profileSaveButton" class="primary-button" type="button">プロフィールを決定</button>
-              <button id="profileBackButton" class="secondary-button off" type="button">初期画面へ</button>
             </div>
           </div>
         </section>
@@ -154,15 +154,55 @@
             <div id="rankingRecentList" class="ranking-recent-list"></div>
 
             <div class="settings-actions">
-              <button id="rankingProfileButton" class="secondary-button" type="button">プロフィール設定</button>
               <button id="rankingBackButton" class="secondary-button" type="button">初期画面へ</button>
             </div>
           </div>
         </section>
 
-        <section id="settingsScreen" class="screen" aria-labelledby="settingsTitle">
-          <div class="settings-card compact-card">
+
+      </main>
+    </section>
+
+    <section id="inputZone" class="input-zone" aria-label="テンキーウィンドウ">
+      <div class="operation-titlebar">
+        <span id="navPadTitle" class="nav-pad-title">手書きパッド</span>
+        <span id="inputEcho" class="input-echo" aria-live="polite">入力：—</span>
+        <button id="togglePadButton" class="mini-button" type="button">メモを開く</button>
+        <div id="navPadControls" class="nav-pad-controls off">
+          <button id="navClearPadButton" class="mini-button" type="button">消す</button>
+          <button id="navClosePadButton" class="mini-button" type="button">閉じる</button>
+        </div>
+      </div>
+
+      <div id="padPanel" class="pad-panel collapsed">
+        <div id="padAnswerEffect" class="pad-answer-effect" aria-hidden="true"></div>
+        <div class="pad-toolbar">
+          <span class="pad-title">手書きパッド</span>
+          <div class="pad-actions">
+            <span id="padInputEcho" class="input-echo" aria-live="polite">入力：—</span>
+            <button id="clearPadButton" class="mini-button" type="button">消す</button>
+            <button id="closePadButton" class="mini-button" type="button">閉じる</button>
+          </div>
+        </div>
+        <canvas id="scratchPad" width="900" height="420" aria-label="筆算やメモを書く手書きパッド"></canvas>
+      </div>
+
+      <div id="keypadPanel" class="keypad-panel">
+        <div id="keyHint" class="key-hint">数字キー：入力　Enter：決定　Backspace：消す</div>
+        <div id="keypad" class="keypad" role="group" aria-label="テンキー"></div>
+      </div>
+    </section>
+
+    <div id="settingsOverlay" class="settings-overlay off" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <section id="settingsScreen" class="settings-overlay-panel">
+        <header class="settings-overlay-header">
+          <div>
+            <p class="eyebrow">SETTINGS</p>
             <h2 id="settingsTitle">設定</h2>
+          </div>
+          <button id="settingsCloseButton" class="overlay-close-button" type="button" aria-label="設定を閉じる">×<span>閉じる</span></button>
+        </header>
+        <div class="settings-overlay-body">
 
             <fieldset>
               <legend>テンキー配置</legend>
@@ -220,40 +260,9 @@
             <div class="settings-actions subtle-actions">
               <button id="resetDataButton" class="danger-button subtle-danger" type="button">アプリデータをリセット</button>
             </div>
-          </div>
-        </section>
-      </main>
-    </section>
-
-    <section id="inputZone" class="input-zone" aria-label="テンキーウィンドウ">
-      <div class="operation-titlebar">
-        <span id="navPadTitle" class="nav-pad-title">手書きパッド</span>
-        <span id="inputEcho" class="input-echo" aria-live="polite">入力：—</span>
-        <button id="togglePadButton" class="mini-button" type="button">メモを開く</button>
-        <div id="navPadControls" class="nav-pad-controls off">
-          <button id="navClearPadButton" class="mini-button" type="button">消す</button>
-          <button id="navClosePadButton" class="mini-button" type="button">閉じる</button>
         </div>
-      </div>
-
-      <div id="padPanel" class="pad-panel collapsed">
-        <div id="padAnswerEffect" class="pad-answer-effect" aria-hidden="true"></div>
-        <div class="pad-toolbar">
-          <span class="pad-title">手書きパッド</span>
-          <div class="pad-actions">
-            <span id="padInputEcho" class="input-echo" aria-live="polite">入力：—</span>
-            <button id="clearPadButton" class="mini-button" type="button">消す</button>
-            <button id="closePadButton" class="mini-button" type="button">閉じる</button>
-          </div>
-        </div>
-        <canvas id="scratchPad" width="900" height="420" aria-label="筆算やメモを書く手書きパッド"></canvas>
-      </div>
-
-      <div id="keypadPanel" class="keypad-panel">
-        <div id="keyHint" class="key-hint">数字キー：入力　Enter：決定　Backspace：消す</div>
-        <div id="keypad" class="keypad" role="group" aria-label="テンキー"></div>
-      </div>
-    </section>
+      </section>
+    </div>
 
     <div id="rankingOverlay" class="ranking-overlay off" role="dialog" aria-modal="true" aria-labelledby="rankingOverlayTitle">
       <section class="ranking-overlay-panel">

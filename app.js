@@ -1,9 +1,9 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '2.0.0-alpha.2';
-  const STORAGE_KEY = 'mulrate_v2_0_0_alpha2_state';
-  const LEGACY_STORAGE_KEYS = ['mulrate_v2_0_0_alpha1_state', 'mulrate_v1_0_0_beta18_state'];
+  const APP_VERSION = '2.0.0-alpha.3';
+  const STORAGE_KEY = 'mulrate_v2_0_0_alpha3_state';
+  const LEGACY_STORAGE_KEYS = ['mulrate_v2_0_0_alpha2_state', 'mulrate_v2_0_0_alpha1_state', 'mulrate_v1_0_0_beta18_state'];
   const MAX_RATE = 99999999;
   const SET_SIZE = 10;
   const ANSWER_EPSILON = 1e-9;
@@ -45,6 +45,7 @@
       enabled: false,
       provider: 'none',
       playerId: '',
+      playerSecret: '',
       nickname: '',
       profileComplete: false,
       nicknameLocked: false,
@@ -55,7 +56,10 @@
       createdAt: '',
       updatedAt: '',
       lastSyncAt: '',
-      lastSyncStatus: 'offline'
+      lastSyncAttemptAt: '',
+      lastSyncStatus: 'offline',
+      lastSubmittedSessionId: '',
+      syncQueue: []
     },
     settings: {
       keypadLayout: 'normal',
@@ -85,6 +89,9 @@
     gameCard: document.querySelector('#gameScreen .game-card'),
     homeButton: document.getElementById('homeButton'),
     pauseButton: document.getElementById('pauseButton'),
+    settingsButton: document.getElementById('settingsButton'),
+    settingsOverlay: document.getElementById('settingsOverlay'),
+    settingsCloseButton: document.getElementById('settingsCloseButton'),
     statusText: document.getElementById('statusText'),
     homeScreen: document.getElementById('homeScreen'),
     gameScreen: document.getElementById('gameScreen'),
@@ -101,10 +108,8 @@
     learnedCount: document.getElementById('learnedCount'),
     learnedList: document.getElementById('learnedList'),
     learnedBackButton: document.getElementById('learnedBackButton'),
-    settingsButton: document.getElementById('settingsButton'),
-    profileButton: document.getElementById('profileButton'),
+
     profileStepLabel: document.getElementById('profileStepLabel'),
-    profileLockBadge: document.getElementById('profileLockBadge'),
     profileIntro: document.getElementById('profileIntro'),
     rankingButton: document.getElementById('rankingButton'),
     nicknameInput: document.getElementById('nicknameInput'),
@@ -114,7 +119,6 @@
     profileSyncState: document.getElementById('profileSyncState'),
     profileSaveMessage: document.getElementById('profileSaveMessage'),
     profileSaveButton: document.getElementById('profileSaveButton'),
-    profileBackButton: document.getElementById('profileBackButton'),
     profileConsentNote: document.getElementById('profileConsentNote'),
     rankingPlayerName: document.getElementById('rankingPlayerName'),
     rankingConnectionBadge: document.getElementById('rankingConnectionBadge'),
@@ -129,7 +133,6 @@
     rankingOverlayStatus: document.getElementById('rankingOverlayStatus'),
     rankingOverlayList: document.getElementById('rankingOverlayList'),
     rankingRecentList: document.getElementById('rankingRecentList'),
-    rankingProfileButton: document.getElementById('rankingProfileButton'),
     rankingBackButton: document.getElementById('rankingBackButton'),
     questionCounter: document.getElementById('questionCounter'),
     gamePoint: document.getElementById('gamePoint'),
@@ -419,6 +422,8 @@
   let lastPoint = null;
   let homeRateAnimationId = null;
   let padEffectTimer = null;
+  let settingsReturnFocus = null;
+  let rankingSyncInFlight = false;
 
   function createEmptySession() {
     return {
@@ -480,6 +485,7 @@
     next.player.rating = clamp(Math.round(next.player.rating || 300), 0, MAX_RATE);
     next.player.highestRating = clamp(Math.round(next.player.highestRating || next.player.rating), 0, MAX_RATE);
     next.online.playerId = String(next.online.playerId || generatePlayerId());
+    next.online.playerSecret = normalizePlayerSecret(next.online.playerSecret) || generatePlayerSecret();
     const legacyNickname = String(next.online.nickname || value.player?.nickname || '').normalize('NFKC').trim();
     const legacyNameValidation = validateNickname(legacyNickname);
     const inferredProfileComplete = Boolean(legacyNameValidation.ok && legacyNickname !== 'プレイヤー');
@@ -492,6 +498,11 @@
     next.online.totalPlayers = Number.isFinite(Number(next.online.totalPlayers)) ? Math.max(0, Math.trunc(Number(next.online.totalPlayers))) : null;
     next.online.createdAt = next.online.createdAt || now;
     next.online.updatedAt = next.online.updatedAt || now;
+    next.online.lastSyncAttemptAt = next.online.lastSyncAttemptAt || '';
+    next.online.lastSubmittedSessionId = String(next.online.lastSubmittedSessionId || '');
+    next.online.syncQueue = Array.isArray(next.online.syncQueue)
+      ? next.online.syncQueue.filter(isValidQueuedSubmission).slice(-20)
+      : [];
     const adapter = getOnlineAdapter();
     next.online.provider = adapter.isConfigured ? adapter.provider : 'none';
     next.online.enabled = Boolean(adapter.isConfigured && next.online.consent && next.online.profileComplete);
@@ -536,8 +547,30 @@
 
   function generatePlayerId() {
     if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
-    const random = Math.random().toString(36).slice(2, 12);
-    return `local-${Date.now().toString(36)}-${random}`;
+    const bytes = new Uint8Array(16);
+    if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(bytes);
+    else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  }
+
+  function generatePlayerSecret() {
+    const bytes = new Uint8Array(32);
+    if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(bytes);
+    else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+    const binary = Array.from(bytes, (byte) => String.fromCharCode(byte)).join('');
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+  }
+
+  function normalizePlayerSecret(value) {
+    const secret = String(value || '').trim();
+    return /^[A-Za-z0-9_-]{32,128}$/.test(secret) ? secret : '';
+  }
+
+  function isValidQueuedSubmission(value) {
+    return Boolean(value && typeof value === 'object' && /^[0-9a-f-]{36}$/i.test(String(value?.latestSession?.verification?.sessionId || '')));
   }
 
   function shortPlayerCode(playerId) {
@@ -1880,6 +1913,13 @@
       closeRankingOverlay();
       return;
     }
+    if (els.settingsOverlay && !els.settingsOverlay.classList.contains('off')) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeSettings();
+      }
+      return;
+    }
     if (els.app.dataset.screen === 'profile' && document.activeElement === els.nicknameInput) return;
     const key = event.key;
     const layout = state.settings.keypadLayout;
@@ -1913,26 +1953,32 @@
   function showScreen(name) {
     if (!state.online.profileComplete && name !== 'profile') name = 'profile';
     els.app.dataset.screen = name;
-    for (const cls of ['screen-home', 'screen-game', 'screen-pause', 'screen-settings', 'screen-learned', 'screen-profile', 'screen-ranking']) els.app.classList.remove(cls);
+    for (const cls of ['screen-home', 'screen-game', 'screen-pause', 'screen-learned', 'screen-profile', 'screen-ranking']) els.app.classList.remove(cls);
     els.app.classList.add(`screen-${name}`);
-    for (const screen of [els.homeScreen, els.gameScreen, els.pauseScreen, els.settingsScreen, els.learnedScreen, els.profileScreen, els.rankingScreen]) {
+    for (const screen of [els.homeScreen, els.gameScreen, els.pauseScreen, els.learnedScreen, els.profileScreen, els.rankingScreen]) {
       screen?.classList.remove('active');
     }
     const active = {
       home: els.homeScreen,
       game: els.gameScreen,
       pause: els.pauseScreen,
-      settings: els.settingsScreen,
       learned: els.learnedScreen,
       profile: els.profileScreen,
       ranking: els.rankingScreen
     }[name];
     active?.classList.add('active');
 
-    els.pauseButton.classList.toggle('hidden', !(name === 'game' && session.phase === 'playing'));
-    els.homeButton.classList.toggle('hidden', name === 'home' || !state.online.profileComplete);
+    updateTopbarActions(name);
     updateTopInfo({ animateHomeRate: name === 'home' });
     updateOperationState();
+  }
+
+  function updateTopbarActions(screenName = els.app.dataset.screen || 'home') {
+    const pauseVisible = screenName === 'game' && session.phase === 'playing';
+    const settingsOpen = Boolean(els.settingsOverlay && !els.settingsOverlay.classList.contains('off'));
+    els.pauseButton.classList.toggle('hidden', !pauseVisible);
+    els.settingsButton?.classList.toggle('hidden', !state.online.profileComplete || pauseVisible || settingsOpen);
+    els.homeButton.classList.toggle('hidden', screenName === 'home' || !state.online.profileComplete);
   }
 
   function updateTopInfo(options = {}) {
@@ -1991,7 +2037,6 @@
     if (els.profilePreviewName) els.profilePreviewName.textContent = complete ? state.online.nickname : '未設定';
     if (els.profileCode) els.profileCode.textContent = `端末ID：${shortPlayerCode(state.online.playerId)}`;
     if (els.profileStepLabel) els.profileStepLabel.textContent = complete ? 'PROFILE' : '初回設定';
-    if (els.profileLockBadge) els.profileLockBadge.classList.toggle('off', !complete);
     if (els.profileIntro) {
       els.profileIntro.textContent = complete
         ? '表示名は固定されています。公開に未同意の場合は、設定画面から後で同意できます。'
@@ -2013,7 +2058,6 @@
       els.profileSaveButton.textContent = complete ? '同意設定を保存' : 'プロフィールを決定';
       els.profileSaveButton.classList.toggle('off', complete && consentLocked);
     }
-    els.profileBackButton?.classList.toggle('off', !complete);
     if (els.profileSaveMessage) {
       els.profileSaveMessage.textContent = '';
       els.profileSaveMessage.classList.remove('error', 'success');
@@ -2063,6 +2107,7 @@
   function openRanking() {
     renderRanking();
     showScreen('ranking');
+    flushRankingQueue();
     refreshOnlineRanking();
   }
 
@@ -2078,10 +2123,13 @@
     }
     renderRankingPosition();
     if (els.rankingOnlineStatus) {
+      const queued = state.online.syncQueue.length;
       els.rankingOnlineStatus.textContent = state.online.enabled
-        ? `最終同期：${state.online.lastSyncAt ? formatHistoryDate(state.online.lastSyncAt) : '未同期'}`
+        ? queued
+          ? `未送信 ${queued}件｜最終同期：${state.online.lastSyncAt ? formatHistoryDate(state.online.lastSyncAt) : '未同期'}`
+          : `最終同期：${state.online.lastSyncAt ? formatHistoryDate(state.online.lastSyncAt) : '未同期'}`
         : state.online.consent
-          ? '公開への同意は保存済みです。接続設定後に成績送信を開始します。'
+          ? '公開への同意は保存済みです。接続設定後に新しい成績から送信します。'
           : getOnlineAdapter().isConfigured
             ? 'トップ200は閲覧できます。現在順位を記録するには設定画面で公開に同意してください。'
             : 'バックエンド未接続です。枠をクリックするとランキング画面の動作を確認できます。';
@@ -2155,17 +2203,51 @@
     }
   }
 
-  async function syncLatestRanking() {
-    const adapter = getOnlineAdapter();
-    if (!state.online.enabled || !state.online.consent || !adapter.isConfigured) return;
-    const result = await adapter.submitRanking(buildRankingSubmission());
-    state.online.lastSyncAt = new Date().toISOString();
-    state.online.lastSyncStatus = result.ok ? 'ok' : (result.code || 'error');
-    if (result.ok) {
-      state.online.currentRank = Number.isFinite(Number(result.currentRank)) ? Number(result.currentRank) : state.online.currentRank;
-      state.online.totalPlayers = Number.isFinite(Number(result.totalPlayers)) ? Number(result.totalPlayers) : state.online.totalPlayers;
-    }
+  function enqueueLatestRankingSubmission() {
+    if (!state.online.consent || !state.online.profileComplete) return;
+    const payload = buildRankingSubmission();
+    const sessionId = String(payload?.latestSession?.verification?.sessionId || '');
+    if (!sessionId || state.online.lastSubmittedSessionId === sessionId) return;
+    if (state.online.syncQueue.some((queued) => queued?.latestSession?.verification?.sessionId === sessionId)) return;
+    state.online.syncQueue.push(payload);
+    state.online.syncQueue = state.online.syncQueue.slice(-20);
     saveState();
+  }
+
+  async function syncLatestRanking() {
+    enqueueLatestRankingSubmission();
+    await flushRankingQueue();
+  }
+
+  async function flushRankingQueue() {
+    const adapter = getOnlineAdapter();
+    if (rankingSyncInFlight || !state.online.enabled || !state.online.consent || !adapter.isConfigured || !state.online.syncQueue.length) return;
+    rankingSyncInFlight = true;
+    try {
+      while (state.online.syncQueue.length) {
+        const payload = state.online.syncQueue[0];
+        state.online.lastSyncAttemptAt = new Date().toISOString();
+        const result = await adapter.submitRanking(payload);
+        const duplicate = result.code === 'DUPLICATE_SESSION';
+        state.online.lastSyncStatus = result.ok || duplicate ? 'ok' : (result.code || 'error');
+        if (!result.ok && !duplicate) {
+          saveState();
+          break;
+        }
+        const sessionId = String(payload?.latestSession?.verification?.sessionId || '');
+        state.online.syncQueue.shift();
+        state.online.lastSubmittedSessionId = sessionId;
+        state.online.lastSyncAt = new Date().toISOString();
+        if (result.ok) {
+          state.online.currentRank = Number.isFinite(Number(result.currentRank)) ? Number(result.currentRank) : state.online.currentRank;
+          state.online.totalPlayers = Number.isFinite(Number(result.totalPlayers)) ? Number(result.totalPlayers) : state.online.totalPlayers;
+        }
+        saveState();
+      }
+    } finally {
+      rankingSyncInFlight = false;
+      if (els.rankingScreen?.classList.contains('active')) renderRanking();
+    }
   }
 
   function renderRankingRecentList() {
@@ -2210,6 +2292,7 @@
       appVersion: APP_VERSION,
       player: {
         playerId: state.online.playerId,
+        playerSecret: state.online.playerSecret,
         nickname: state.online.nickname
       },
       consent: Boolean(state.online.consent),
@@ -2235,6 +2318,7 @@
   }
 
   function openSettings() {
+    if (!state.online.profileComplete || !els.settingsOverlay) return;
     setRadioValue('keypadLayout', state.settings.keypadLayout);
     setRadioValue('inputSide', state.settings.inputSide);
     setRadioValue('handwritingPad', state.settings.handwritingPad ? 'on' : 'off');
@@ -2243,7 +2327,21 @@
     setRadioValue('formulaFont', state.settings.formulaFont);
     setRadioValue('sound', state.settings.sound ? 'on' : 'off');
     renderSettingsConsent();
-    showScreen('settings');
+    settingsReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : els.settingsButton;
+    els.settingsOverlay.classList.remove('off');
+    document.body.classList.add('overlay-open');
+    updateTopbarActions();
+    window.setTimeout(() => els.settingsCloseButton?.focus(), 0);
+  }
+
+  function closeSettings() {
+    if (!els.settingsOverlay || els.settingsOverlay.classList.contains('off')) return;
+    els.settingsOverlay.classList.add('off');
+    if (els.rankingOverlay?.classList.contains('off')) document.body.classList.remove('overlay-open');
+    updateTopbarActions();
+    const focusTarget = settingsReturnFocus?.isConnected ? settingsReturnFocus : els.settingsButton;
+    settingsReturnFocus = null;
+    window.setTimeout(() => focusTarget?.focus(), 0);
   }
 
   function renderSettingsConsent() {
@@ -2344,7 +2442,7 @@
     if (!ok) return;
     const adapter = getOnlineAdapter();
     if (adapter.isConfigured && state.online.consent && state.online.playerId) {
-      const deleted = await adapter.deletePlayerData(state.online.playerId);
+      const deleted = await adapter.deletePlayerData(state.online.playerId, state.online.playerSecret);
       if (!deleted.ok) {
         window.alert(deleted.message || 'オンライン側のデータを削除できませんでした。通信状態を確認して、もう一度リセットしてください。');
         return;
@@ -2355,6 +2453,7 @@
     session = createEmptySession();
     saveState();
     applySettings();
+    closeSettings();
     renderProfile();
     showScreen('profile');
     window.setTimeout(() => els.nicknameInput?.focus(), 0);
@@ -2553,6 +2652,7 @@
   function updateOperationState() {
     const active = ['playing', 'retry'].includes(session.phase) && !session.locked;
     els.inputZone.classList.toggle('answering', active);
+    updateTopbarActions();
   }
 
   function learnedSummaryText() {
@@ -2687,13 +2787,11 @@
     els.startButton.addEventListener('click', () => startSet());
     els.learnedButton.addEventListener('click', openLearned);
     els.learnedBackButton.addEventListener('click', goHome);
-    els.settingsButton.addEventListener('click', openSettings);
-    els.profileButton?.addEventListener('click', openProfile);
+    els.settingsButton?.addEventListener('click', openSettings);
+    els.settingsCloseButton?.addEventListener('click', closeSettings);
     els.rankingButton?.addEventListener('click', openRanking);
     els.profileSaveButton?.addEventListener('click', saveProfile);
-    els.profileBackButton?.addEventListener('click', goHome);
     els.rankingBackButton?.addEventListener('click', goHome);
-    els.rankingProfileButton?.addEventListener('click', openProfile);
     els.rankingOnlineCard?.addEventListener('click', openRankingOverlay);
     els.rankingOverlay?.addEventListener('click', closeRankingOverlay);
     els.settingsRankingConsentInput?.addEventListener('change', saveRankingConsentFromSettings);
@@ -2717,6 +2815,7 @@
     els.closePadButton.addEventListener('click', () => togglePad(false));
     els.navClosePadButton?.addEventListener('click', () => togglePad(false));
     window.addEventListener('pointerdown', () => { if (state.settings.sound) ensureAudioContext(); }, { passive: true });
+    window.addEventListener('online', () => flushRankingQueue());
     window.addEventListener('keydown', handleKeyboard);
     document.addEventListener('gesturestart', (event) => event.preventDefault());
   }
@@ -2725,7 +2824,10 @@
     attachEvents();
     setupCanvas();
     applySettings();
-    if (state.online.profileComplete) showScreen('home');
+    if (state.online.profileComplete) {
+      showScreen('home');
+      flushRankingQueue();
+    }
     else openProfile();
   }
 

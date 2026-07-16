@@ -1,17 +1,33 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { isAllowedNickname } from '../_shared/name-filter.ts';
 
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS'
-};
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SECRET_RE = /^[A-Za-z0-9_-]{32,128}$/;
 const MAX_RATE = 99_999_999;
 
-function response(body: Record<string, unknown>, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json; charset=utf-8' } });
+function corsHeaders(req: Request): Record<string, string> {
+  const origin = req.headers.get('origin') || '';
+  const allowed = String(Deno.env.get('MULRATE_ALLOWED_ORIGINS') || '')
+    .split(',').map((value) => value.trim()).filter(Boolean);
+  const allowOrigin = !allowed.length ? '*' : (allowed.includes(origin) ? origin : 'null');
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+    'Vary': 'Origin'
+  };
 }
+
+function response(req: Request, body: Record<string, unknown>, status = 200): Response {
+  return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders(req), 'Content-Type': 'application/json; charset=utf-8' } });
+}
+
+async function sha256Hex(text: string): Promise<string> {
+  const data = new TextEncoder().encode(text);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
 function finite(value: unknown): number | null {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
@@ -30,9 +46,11 @@ function fnv1a(text: string): string {
 
 function verifyPayload(payload: any): { ok: true; data: any } | { ok: false; code: string; message: string } {
   const playerId = String(payload?.player?.playerId ?? '');
+  const playerSecret = String(payload?.player?.playerSecret ?? '');
   const nickname = String(payload?.player?.nickname ?? '').normalize('NFKC').trim().replace(/\s+/g, ' ');
   if (payload?.consent !== true) return { ok: false, code: 'CONSENT_REQUIRED', message: '公開への同意が必要です。' };
   if (!UUID_RE.test(playerId)) return { ok: false, code: 'INVALID_PLAYER_ID', message: 'プレイヤーIDが不正です。' };
+  if (!SECRET_RE.test(playerSecret)) return { ok: false, code: 'INVALID_PLAYER_SECRET', message: '端末認証情報が不正です。' };
   if (!isAllowedNickname(nickname)) return { ok: false, code: 'INVALID_NICKNAME', message: 'この表示名は使用できません。' };
 
   const metrics = payload?.metrics ?? {};
@@ -94,14 +112,14 @@ function verifyPayload(payload: any): { ok: true; data: any } | { ok: false; cod
   if (before === null || after === null || delta === null || after !== before + delta || after !== currentRating) {
     return { ok: false, code: 'RATING_MISMATCH', message: 'レート記録が一致しません。' };
   }
-  return { ok: true, data: { playerId, nickname, metrics: { currentRating, highestRating, learnedCount, completedSets }, latest, proof, firstCorrect, finalCorrect, before, after, delta } };
+  return { ok: true, data: { playerId, playerSecret, nickname, metrics: { currentRating, highestRating, learnedCount, completedSets }, latest, proof, firstCorrect, finalCorrect, before, after, delta } };
 }
 
 Deno.serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders(req) });
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  if (!supabaseUrl || !serviceRoleKey) return response({ ok: false, code: 'SERVER_CONFIG', message: 'サーバー設定が不足しています。' }, 500);
+  if (!supabaseUrl || !serviceRoleKey) return response(req, { ok: false, code: 'SERVER_CONFIG', message: 'サーバー設定が不足しています。' }, 500);
   const db = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
 
   try {
@@ -133,17 +151,19 @@ Deno.serve(async (req: Request) => {
         rating: row.current_rating,
         isCurrentPlayer: row.id === playerId
       }));
-      return response({ currentRank, totalPlayers: count ?? entries.length, entries });
+      return response(req, { currentRank, totalPlayers: count ?? entries.length, entries });
     }
 
     if (req.method === 'POST') {
       const payload = await req.json().catch(() => null);
       const checked = verifyPayload(payload);
-      if (!checked.ok) return response({ ok: false, code: checked.code, message: checked.message }, 400);
+      if (!checked.ok) return response(req, { ok: false, code: checked.code, message: checked.message }, 400);
       const d = checked.data;
-      const { error } = await db.rpc('mulrate_commit_session', {
+      const authTokenHash = await sha256Hex(d.playerSecret);
+      const { error } = await db.rpc('mulrate_commit_session_v2', {
         p_player_id: d.playerId,
         p_nickname: d.nickname,
+        p_auth_token_hash: authTokenHash,
         p_current_rating: d.metrics.currentRating,
         p_highest_rating: d.metrics.highestRating,
         p_learned_count: d.metrics.learnedCount,
@@ -162,29 +182,46 @@ Deno.serve(async (req: Request) => {
         p_verification_payload: d.proof
       });
       if (error) {
-        const code = String(error.message || '').includes('duplicate key') ? 'DUPLICATE_SESSION' : String(error.message || 'COMMIT_FAILED');
-        return response({ ok: false, code, message: 'ランキング記録を確定できませんでした。' }, 409);
+        const raw = String(error.message || 'COMMIT_FAILED');
+        const code = raw.includes('duplicate key') ? 'DUPLICATE_SESSION'
+          : raw.includes('PLAYER_AUTH_FAILED') ? 'PLAYER_AUTH_FAILED'
+            : raw.includes('RATE_LIMITED') ? 'RATE_LIMITED'
+              : raw.includes('STALE_RATING') ? 'STALE_RATING'
+                : raw.includes('NICKNAME_IMMUTABLE') ? 'NICKNAME_IMMUTABLE'
+                  : 'COMMIT_FAILED';
+        const message = code === 'PLAYER_AUTH_FAILED' ? 'この端末IDの認証に失敗しました。'
+          : code === 'RATE_LIMITED' ? '短時間の送信回数が多すぎます。しばらくしてから再送します。'
+            : code === 'STALE_RATING' ? 'サーバー上の記録と連続していません。同期状態を確認してください。'
+              : 'ランキング記録を確定できませんでした。';
+        return response(req, { ok: false, code, message }, 409);
       }
       const { data: current } = await db.from('mulrate_players').select('updated_at').eq('id', d.playerId).single();
       const { count: greater } = await db.from('mulrate_players').select('id', { count: 'exact', head: true }).gt('current_rating', d.after);
       const { count: earlierTie } = await db.from('mulrate_players').select('id', { count: 'exact', head: true })
         .eq('current_rating', d.after).lt('updated_at', current?.updated_at ?? new Date().toISOString());
       const { count: total } = await db.from('mulrate_players').select('id', { count: 'exact', head: true });
-      return response({ currentRank: 1 + (greater ?? 0) + (earlierTie ?? 0), totalPlayers: total ?? 1 });
+      return response(req, { currentRank: 1 + (greater ?? 0) + (earlierTie ?? 0), totalPlayers: total ?? 1 });
     }
 
     if (req.method === 'DELETE') {
       const body = await req.json().catch(() => ({}));
       const playerId = String(body.playerId ?? '');
-      if (!UUID_RE.test(playerId)) return response({ ok: false, code: 'INVALID_PLAYER_ID', message: 'プレイヤーIDが不正です。' }, 400);
-      const { error } = await db.from('mulrate_players').delete().eq('id', playerId);
+      const playerSecret = String(body.playerSecret ?? '');
+      if (!UUID_RE.test(playerId)) return response(req, { ok: false, code: 'INVALID_PLAYER_ID', message: 'プレイヤーIDが不正です。' }, 400);
+      if (!SECRET_RE.test(playerSecret)) return response(req, { ok: false, code: 'INVALID_PLAYER_SECRET', message: '端末認証情報が不正です。' }, 400);
+      const authTokenHash = await sha256Hex(playerSecret);
+      const { data: deleted, error } = await db.rpc('mulrate_delete_player', {
+        p_player_id: playerId,
+        p_auth_token_hash: authTokenHash
+      });
       if (error) throw error;
-      return response({ deleted: true });
+      if (!deleted) return response(req, { ok: false, code: 'PLAYER_AUTH_FAILED', message: 'オンラインデータを削除する権限を確認できませんでした。' }, 403);
+      return response(req, { deleted: true });
     }
 
-    return response({ ok: false, code: 'METHOD_NOT_ALLOWED', message: '対応していない操作です。' }, 405);
+    return response(req, { ok: false, code: 'METHOD_NOT_ALLOWED', message: '対応していない操作です。' }, 405);
   } catch (error) {
     console.error(error);
-    return response({ ok: false, code: 'SERVER_ERROR', message: 'ランキングサーバーでエラーが発生しました。' }, 500);
+    return response(req, { ok: false, code: 'SERVER_ERROR', message: 'ランキングサーバーでエラーが発生しました。' }, 500);
   }
 });

@@ -56,8 +56,8 @@
       return request(`?${params.toString()}`, { method: 'GET' });
     },
 
-    async deletePlayerData(playerId) {
-      return request('', { method: 'DELETE', body: JSON.stringify({ playerId }) });
+    async deletePlayerData(playerId, playerSecret) {
+      return request('', { method: 'DELETE', body: JSON.stringify({ playerId, playerSecret }) });
     }
   });
 })();
