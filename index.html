@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#0e1d1b">
   <meta name="description" content="MulRate - かけ算の計算力を鍛えるレート制トレーニングアプリ">
-  <title>MulRate v2.0.0 alpha.4</title>
+  <title>MulRate v2.0.0 alpha.7</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -245,6 +245,24 @@
               <legend>効果音</legend>
               <label><input type="radio" name="sound" value="on"> ON</label>
               <label><input type="radio" name="sound" value="off"> OFF</label>
+            </fieldset>
+
+            <fieldset class="online-connection-fieldset">
+              <legend>オンライン接続</legend>
+              <div class="connection-diagnostic-head">
+                <span id="connectionStatusBadge" class="connection-diagnostic-badge">未設定</span>
+                <p id="connectionStatusMessage">接続情報はまだ設定されていません。</p>
+              </div>
+              <div class="connection-diagnostic-grid" aria-label="オンライン接続の診断結果">
+                <div><span>接続先</span><strong id="connectionProjectHost">未設定</strong></div>
+                <div><span>公開用キー</span><strong id="connectionKeyType">—</strong></div>
+                <div><span>Edge Function</span><strong id="connectionApiState">—</strong></div>
+                <div><span>データベース</span><strong id="connectionDatabaseState">—</strong></div>
+                <div><span>公開元の制限</span><strong id="connectionOriginState">—</strong></div>
+                <div><span>応答時間</span><strong id="connectionLatency">—</strong></div>
+              </div>
+              <button id="connectionCheckButton" class="secondary-button connection-check-button" type="button">接続を確認</button>
+              <p class="settings-note left-note">ブラウザにはPublishable keyだけを設定します。Secret keyとservice_role keyはアプリへ保存しません。</p>
             </fieldset>
 
             <fieldset>

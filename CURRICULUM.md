@@ -1,4 +1,4 @@
-# MulRate v2.0.0 alpha.4 CURRICULUM
+# MulRate v2.0.0 alpha.7 CURRICULUM
 
 カリキュラム内容はv1.0.0 beta.19から変更なし。
 

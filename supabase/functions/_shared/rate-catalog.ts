@@ -1,4 +1,4 @@
-// Generated from the alpha.4 client curriculum. Keep the order stable: typeIndex is part of the verification context.
+// Generated from the alpha.5 client curriculum. Keep the order stable: typeIndex is part of the verification context.
 export type RateType = {
   id: string;
   difficulty: number;

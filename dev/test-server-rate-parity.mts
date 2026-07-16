@@ -175,3 +175,55 @@ if (tampered.ok || tampered.code !== 'QUESTION_PLAN_MISMATCH') throw new Error('
 const unsupported = verifyAndCalculateRate(buildItems(tamperContext, 8, 10, 5.2), tamperBase.rating, { ...tamperContext, formulaVersion: 'rate-v0' });
 if (unsupported.ok || unsupported.code !== 'UNSUPPORTED_RATE_FORMULA') throw new Error('Unsupported formula was not rejected.');
 console.log('Tamper rejection cases passed.');
+
+const rankingBase = {
+  enabled: true,
+  consent: true,
+  rankingStatus: 'verified',
+  currentRank: 37,
+  totalPlayers: 512,
+  verifiedSessionCount: 18,
+  syncQueue: [],
+  lastSyncAt: '2026-07-16T12:00:00.000Z',
+  reviewMessage: ''
+};
+const verifiedUi = debug.buildRankingUiModel(rankingBase, true);
+if (verifiedUi.badge !== '認定済み' || verifiedUi.position !== '37位／512位中' || !verifiedUi.statusText.includes('認定済みセッション')) {
+  throw new Error(`Verified ranking UI mismatch: ${JSON.stringify(verifiedUi)}`);
+}
+const provisionalUi = debug.buildRankingUiModel({ ...rankingBase, rankingStatus: 'provisional', currentRank: null }, true);
+if (provisionalUi.badge !== '暫定' || provisionalUi.position !== '暫定記録' || !provisionalUi.statusText.includes('公開順位には含まれません')) {
+  throw new Error(`Provisional ranking UI mismatch: ${JSON.stringify(provisionalUi)}`);
+}
+const quarantineUi = debug.buildRankingUiModel({ ...rankingBase, rankingStatus: 'quarantined', currentRank: null, reviewMessage: '確認テスト' }, true);
+if (quarantineUi.badge !== '確認中' || quarantineUi.position !== '記録確認中' || quarantineUi.statusText !== '確認テスト') {
+  throw new Error(`Quarantined ranking UI mismatch: ${JSON.stringify(quarantineUi)}`);
+}
+console.log('Ranking UI state cases passed.');
+
+const migratedAlpha4 = debug.migrateState({
+  schemaVersion: 3,
+  player: { rating: 12345, highestRating: 13000 },
+  online: {
+    nickname: '移行テスト', profileComplete: true, nicknameLocked: true,
+    consent: true, consentLocked: true, playerId: '11111111-1111-4111-8111-111111111111',
+    playerSecret: 'abcdefghijklmnopqrstuvwxyzABCDEFGH12345678'
+  },
+  progress: { typeIndex: 12, patternIndex: 0, patternStayCount: 2, completedSets: 44 },
+  history: []
+});
+if (migratedAlpha4.schemaVersion !== 6 || migratedAlpha4.player.rating !== 12345 || migratedAlpha4.online.nickname !== '移行テスト') {
+  throw new Error(`alpha.4 to alpha.7 migration mismatch: ${JSON.stringify(migratedAlpha4)}`);
+}
+if (migratedAlpha4.online.rankingStatus !== 'not_joined' || migratedAlpha4.progress.completedSets !== 44) {
+  throw new Error(`alpha.7 online migration defaults mismatch: ${JSON.stringify(migratedAlpha4.online)}`);
+}
+if (migratedAlpha4.online.certificationStatus !== 'not_started' || migratedAlpha4.online.certificationLevel !== null) {
+  throw new Error(`alpha.7 certification migration defaults mismatch: ${JSON.stringify(migratedAlpha4.online)}`);
+}
+console.log('alpha.4 to alpha.7 state migration passed.');
+const notJoinedUi = debug.buildRankingUiModel({ ...rankingBase, rankingStatus: 'not_joined', currentRank: null, verifiedSessionCount: 0 }, true);
+if (notJoinedUi.badge !== '未参加' || notJoinedUi.position !== '—位／—位中' || !notJoinedUi.statusText.includes('1セット完了')) {
+  throw new Error(`Not-joined ranking UI mismatch: ${JSON.stringify(notJoinedUi)}`);
+}
+console.log('Not-joined ranking UI case passed.');

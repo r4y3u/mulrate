@@ -1417,3 +1417,135 @@ body.overlay-open { overflow: hidden; }
   .settings-overlay-body { padding: 10px 11px 18px; gap: 8px; }
   .overlay-close-button { min-height: 40px; padding-inline: 10px; }
 }
+
+/* v2.0.0 alpha.5: public-ranking trust states. */
+.connection-badge.provisional {
+  color: #3b2b08;
+  background: #e8c97a;
+  border-color: transparent;
+}
+.connection-badge.review {
+  color: #3a1712;
+  background: #e7aaa0;
+  border-color: transparent;
+}
+.ranking-status-card.status-provisional {
+  border-color: rgba(232, 201, 122, 0.48);
+  background: rgba(232, 201, 122, 0.07);
+}
+.ranking-status-card.status-quarantined {
+  border-color: rgba(231, 170, 160, 0.48);
+  background: rgba(231, 170, 160, 0.07);
+}
+.ranking-status-card.status-hidden {
+  opacity: 0.72;
+}
+.ranking-status-card.status-verified {
+  border-color: rgba(152, 217, 196, 0.42);
+}
+.ranking-status-card.status-provisional .ranking-position { color: #f4dfa8 !important; }
+.ranking-status-card.status-quarantined .ranking-position { color: #f2c0b8 !important; }
+
+/* alpha.6: ranking certification */
+.certification-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 15px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(216, 181, 91, 0.42);
+  background: linear-gradient(135deg, rgba(91, 70, 18, 0.55), rgba(23, 51, 45, 0.92));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+}
+.certification-card.off { display: none; }
+.certification-card > div { min-width: 0; }
+.certification-card strong { display: block; color: #fff; font-size: 1.03rem; }
+.certification-card p { margin: 5px 0 0; color: var(--muted); line-height: 1.55; font-size: 0.86rem; }
+.certification-kicker { display: block; margin-bottom: 4px; color: #e8d39b; font-size: 0.66rem; font-weight: 850; letter-spacing: 0.08em; }
+.certification-card-button { min-width: 132px; padding-inline: 15px; }
+.certification-card.cooldown { border-color: rgba(145, 155, 151, 0.34); background: rgba(24, 44, 40, 0.88); }
+.certification-card.cooldown .certification-kicker { color: var(--muted); }
+.certification-overlay-panel { max-width: 670px; }
+.certification-overlay-body { align-content: start; }
+.certification-summary {
+  padding: 16px;
+  border-radius: 15px;
+  background: rgba(255,255,255,0.055);
+  border: 1px solid rgba(255,255,255,0.09);
+}
+.certification-summary strong { display: block; color: #fff; font-size: 1.1rem; }
+.certification-summary p { margin: 7px 0 0; color: var(--muted); line-height: 1.65; }
+.certification-rule-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.certification-rule-grid > div { padding: 12px 10px; border-radius: 13px; text-align: center; background: rgba(8, 24, 21, 0.72); border: 1px solid rgba(255,255,255,0.08); }
+.certification-rule-grid span { display: block; color: var(--muted); font-size: 0.72rem; font-weight: 760; }
+.certification-rule-grid strong { display: block; margin-top: 4px; color: #fff; font-size: 0.92rem; }
+.app-shell.certification-active .settings-gear,
+.app-shell.certification-active #pauseButton { display: none !important; }
+.app-shell.certification-active .game-meta { color: #ead69d; }
+
+@media (max-width: 620px) {
+  .certification-card { grid-template-columns: 1fr; gap: 10px; padding: 13px; }
+  .certification-card-button { width: 100%; }
+  .certification-rule-grid { gap: 5px; }
+  .certification-rule-grid > div { padding: 9px 5px; }
+}
+
+/* v2.0.0 alpha.7: connection diagnostics */
+.online-connection-fieldset {
+  display: grid;
+  gap: 11px;
+}
+.connection-diagnostic-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+.connection-diagnostic-head p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+.connection-diagnostic-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 68px;
+  min-height: 28px;
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+.connection-diagnostic-badge.checking { color: #f1dda7; border-color: rgba(240, 208, 138, 0.45); }
+.connection-diagnostic-badge.ok { color: #c9f4d8; border-color: rgba(152, 224, 183, 0.5); background: rgba(152, 224, 183, 0.08); }
+.connection-diagnostic-badge.error { color: #ffd0c9; border-color: rgba(240, 160, 151, 0.5); background: rgba(240, 160, 151, 0.08); }
+.connection-diagnostic-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+.connection-diagnostic-grid > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 9px 10px;
+  border: 1px solid rgba(244, 251, 245, 0.09);
+  border-radius: 12px;
+  background: rgba(3, 17, 14, 0.25);
+}
+.connection-diagnostic-grid span { color: var(--muted); font-size: 0.67rem; font-weight: 760; }
+.connection-diagnostic-grid strong { overflow-wrap: anywhere; color: var(--text); font-size: 0.78rem; }
+.connection-check-button { justify-self: start; min-height: 42px; padding-inline: 16px; }
+
+@media (max-width: 430px) {
+  .connection-diagnostic-head { grid-template-columns: 1fr; gap: 7px; }
+  .connection-diagnostic-badge { justify-self: start; }
+  .connection-diagnostic-grid { grid-template-columns: 1fr; }
+  .connection-check-button { width: 100%; }
+}

@@ -1,12 +1,15 @@
 (() => {
   'use strict';
 
-  // Supabase Edge Functionを接続する場合だけ値を設定する。
-  // 公開可能なanon keyのみを置き、service_role keyは絶対にブラウザへ置かない。
+  // MulRateのオンラインランキングを接続する場合だけ値を設定する。
+  // ブラウザへ置いてよいのはSupabaseのPublishable key（または旧anon key）のみ。
+  // Secret key / service_role keyは絶対にここへ置かない。
   window.MulRateOnlineConfig = Object.freeze({
     provider: 'supabase-edge',
     supabaseUrl: '',
-    supabaseAnonKey: '',
-    functionName: 'mulrate-ranking'
+    supabasePublishableKey: '',
+    functionName: 'mulrate-ranking',
+    expectedApiVersion: 'ranking-api-v3',
+    expectedSchemaVersion: 6
   });
 })();
