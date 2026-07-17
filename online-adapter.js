@@ -5,8 +5,8 @@
   const baseUrl = String(config.supabaseUrl || '').trim().replace(/\/$/, '');
   const publishableKey = String(config.supabasePublishableKey || config.supabaseAnonKey || '').trim();
   const functionName = String(config.functionName || 'mulrate-ranking').trim();
-  const expectedApiVersion = String(config.expectedApiVersion || 'ranking-api-v3');
-  const expectedSchemaVersion = Math.max(1, Math.trunc(Number(config.expectedSchemaVersion) || 6));
+  const expectedApiVersion = String(config.expectedApiVersion || 'ranking-api-v5');
+  const expectedSchemaVersion = Math.max(1, Math.trunc(Number(config.expectedSchemaVersion) || 7));
 
   function inspectConfiguration() {
     let parsedUrl = null;
@@ -39,11 +39,17 @@
   const endpoint = configuration.valid ? `${baseUrl}/functions/v1/${encodeURIComponent(functionName)}` : '';
   const isConfigured = Boolean(endpoint && publishableKey && configuration.valid);
 
+
+  function createRequestId() {
+    if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+    return `req_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  }
+
   async function request(path = '', options = {}) {
     if (!isConfigured) {
       return { ok: false, code: configuration.code || 'NOT_CONFIGURED', message: configuration.message || 'オンラインランキングはまだ設定されていません。' };
     }
-    const { timeoutMs = 15000, ...fetchOptions } = options;
+    const { timeoutMs = 15000, requestId = createRequestId(), ...fetchOptions } = options;
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), Math.max(1000, Number(timeoutMs) || 15000));
     try {
@@ -55,82 +61,39 @@
           apikey: publishableKey,
           Authorization: `Bearer ${publishableKey}`,
           'Content-Type': 'application/json',
-          'X-MulRate-Client': 'web-alpha7',
+          'X-MulRate-Client': 'web-alpha11',
+          'X-MulRate-Request-Id': requestId,
           ...(fetchOptions.headers || {})
         }
       });
       const data = await response.json().catch(() => ({}));
+      const retryAfterHeader = Number(response.headers.get('Retry-After'));
+      const retryAfterSeconds = Number.isFinite(Number(data.retryAfterSeconds))
+        ? Number(data.retryAfterSeconds)
+        : (Number.isFinite(retryAfterHeader) ? retryAfterHeader : null);
+      const responseRequestId = response.headers.get('X-MulRate-Request-Id') || requestId;
       if (!response.ok) {
-        return { ...data, ok: false, code: data.code || `HTTP_${response.status}`, message: data.message || 'ランキング通信に失敗しました。', httpStatus: response.status };
+        return {
+          ...data,
+          ok: false,
+          code: data.code || `HTTP_${response.status}`,
+          message: data.message || 'ランキング通信に失敗しました。',
+          httpStatus: response.status,
+          retryAfterSeconds,
+          requestId: responseRequestId
+        };
       }
-      return { ok: true, ...data, httpStatus: response.status };
+      return { ok: true, ...data, httpStatus: response.status, retryAfterSeconds, requestId: responseRequestId };
     } catch (error) {
       return {
         ok: false,
         code: error?.name === 'AbortError' ? 'TIMEOUT' : 'NETWORK_ERROR',
-        message: error?.name === 'AbortError' ? 'ランキング通信がタイムアウトしました。' : 'ランキングへ接続できませんでした。'
+        message: error?.name === 'AbortError' ? 'ランキング通信がタイムアウトしました。' : 'ランキングへ接続できませんでした。',
+        requestId
       };
     } finally {
       window.clearTimeout(timeout);
     }
-  }
-
-  async function diagnose() {
-    const startedAt = performance.now();
-    if (!isConfigured) {
-      return {
-        ok: false,
-        code: configuration.code,
-        message: configuration.message,
-        latencyMs: null,
-        configuration,
-        checks: {
-          configuration: false,
-          edgeFunction: false,
-          database: false,
-          apiCompatibility: false,
-          originPolicy: false
-        }
-      };
-    }
-    const result = await request('?action=health', { method: 'GET', timeoutMs: 10000 });
-    const latencyMs = Math.max(0, Math.round(performance.now() - startedAt));
-    if (!result.ok) {
-      return {
-        ...result,
-        latencyMs,
-        configuration,
-        checks: {
-          configuration: true,
-          edgeFunction: false,
-          database: false,
-          apiCompatibility: false,
-          originPolicy: false
-        }
-      };
-    }
-    const apiCompatible = String(result.apiVersion || '') === expectedApiVersion;
-    const schemaCompatible = Number(result.schemaVersion) >= expectedSchemaVersion;
-    const originRestricted = result.originPolicy === 'restricted';
-    const ok = Boolean(result.database === 'ok' && apiCompatible && schemaCompatible && result.originAccepted !== false);
-    return {
-      ...result,
-      ok,
-      code: ok ? 'CONNECTION_OK' : !apiCompatible ? 'API_VERSION_MISMATCH' : !schemaCompatible ? 'SCHEMA_VERSION_MISMATCH' : result.originAccepted === false ? 'ORIGIN_REJECTED' : 'HEALTH_CHECK_FAILED',
-      message: ok ? 'オンラインランキングへ正常に接続できました。' : !apiCompatible ? 'Edge FunctionのAPI版がアプリと一致しません。' : !schemaCompatible ? 'データベースのマイグレーションが不足しています。' : result.originAccepted === false ? 'この公開元Originは許可されていません。' : 'オンライン接続の一部を確認できませんでした。',
-      latencyMs,
-      configuration,
-      expectedApiVersion,
-      expectedSchemaVersion,
-      checks: {
-        configuration: true,
-        edgeFunction: true,
-        database: result.database === 'ok',
-        apiCompatibility: apiCompatible && schemaCompatible,
-        originPolicy: result.originAccepted !== false,
-        productionOriginRestriction: originRestricted
-      }
-    };
   }
 
   window.MulRateOnlineAdapter = Object.freeze({
@@ -139,18 +102,14 @@
     configuration,
     expectedApiVersion,
     expectedSchemaVersion,
-    diagnose,
 
     async submitRanking(payload) {
-      return request('', { method: 'POST', body: JSON.stringify(payload) });
-    },
-
-    async startCertification(payload) {
-      return request('', { method: 'POST', body: JSON.stringify({ ...payload, action: 'certification_start' }) });
-    },
-
-    async submitCertification(payload) {
-      return request('', { method: 'POST', body: JSON.stringify({ ...payload, action: 'certification_submit' }), timeoutMs: 30000 });
+      const sessionId = String(payload?.latestSession?.verification?.sessionId || '');
+      return request('', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+        headers: sessionId ? { 'X-MulRate-Session-Id': sessionId } : {}
+      });
     },
 
     async fetchRanking(query = {}) {

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#0e1d1b">
   <meta name="description" content="MulRate - かけ算の計算力を鍛えるレート制トレーニングアプリ">
-  <title>MulRate v2.0.0 alpha.7</title>
+  <title>MulRate v2.0.0 alpha.11</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -118,8 +118,7 @@
               <span>ニックネームと成績をランキングに送信・公開することに同意する。</span>
             </label>
             <p id="profileConsentNote" class="settings-note left-note">同意は任意です。同意後は、アプリデータのリセットまで解除できません。</p>
-            <p id="profileSyncState" class="status-panel">現在はサーバー未接続です。外部への送信は行われません。</p>
-            <p id="profileSaveMessage" class="settings-note validation-message" aria-live="polite"></p>
+                        <p id="profileSaveMessage" class="settings-note validation-message" aria-live="polite"></p>
 
             <div class="settings-actions">
               <button id="profileSaveButton" class="primary-button" type="button">プロフィールを決定</button>
@@ -134,7 +133,6 @@
                 <h2 id="rankingTitle">記録・ランキング</h2>
                 <p id="rankingPlayerName" class="muted-text">プレイヤー</p>
               </div>
-              <span id="rankingConnectionBadge" class="connection-badge">端末内</span>
             </div>
 
             <div class="ranking-metrics" aria-label="現在の記録">
@@ -145,9 +143,9 @@
             </div>
 
             <button id="rankingOnlineCard" class="ranking-status-card" type="button" aria-haspopup="dialog" aria-controls="rankingOverlay">
-              <span class="ranking-card-heading"><strong>オンラインランキング</strong><span>トップ200を見る</span></span>
+              <span class="ranking-card-heading"><strong>オンラインランキング</strong></span>
               <strong id="rankingPosition" class="ranking-position">—位／—位中</strong>
-              <p id="rankingOnlineStatus">バックエンド未接続のため、現在は端末内記録のみ表示しています。</p>
+              <p id="rankingOnlineStatus">ランキングを読み込んでいます。</p>
             </button>
 
             <h3 class="section-subtitle">最近の記録</h3>
@@ -245,33 +243,6 @@
               <legend>効果音</legend>
               <label><input type="radio" name="sound" value="on"> ON</label>
               <label><input type="radio" name="sound" value="off"> OFF</label>
-            </fieldset>
-
-            <fieldset class="online-connection-fieldset">
-              <legend>オンライン接続</legend>
-              <div class="connection-diagnostic-head">
-                <span id="connectionStatusBadge" class="connection-diagnostic-badge">未設定</span>
-                <p id="connectionStatusMessage">接続情報はまだ設定されていません。</p>
-              </div>
-              <div class="connection-diagnostic-grid" aria-label="オンライン接続の診断結果">
-                <div><span>接続先</span><strong id="connectionProjectHost">未設定</strong></div>
-                <div><span>公開用キー</span><strong id="connectionKeyType">—</strong></div>
-                <div><span>Edge Function</span><strong id="connectionApiState">—</strong></div>
-                <div><span>データベース</span><strong id="connectionDatabaseState">—</strong></div>
-                <div><span>公開元の制限</span><strong id="connectionOriginState">—</strong></div>
-                <div><span>応答時間</span><strong id="connectionLatency">—</strong></div>
-              </div>
-              <button id="connectionCheckButton" class="secondary-button connection-check-button" type="button">接続を確認</button>
-              <p class="settings-note left-note">ブラウザにはPublishable keyだけを設定します。Secret keyとservice_role keyはアプリへ保存しません。</p>
-            </fieldset>
-
-            <fieldset>
-              <legend>オンラインランキング</legend>
-              <label class="consent-row settings-consent-row">
-                <input id="settingsRankingConsentInput" type="checkbox">
-                <span>ニックネームと成績をランキングに送信・公開することに同意する。</span>
-              </label>
-              <p id="settingsConsentNote" class="settings-note left-note">同意後は、アプリデータのリセットまで解除できません。</p>
             </fieldset>
 
             <p class="settings-note">設定は選んだ時点で保存されます。</p>
